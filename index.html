@@ -1,0 +1,1356 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#101217" />
+  <meta name="description" content="上传全部资料，指定顺序和重点，AI自动编排并生成PPT。" />
+  <meta property="og:title" content="PPT资料管家｜把资料交给AI" />
+  <meta property="og:description" content="客户只指定顺序和重点，AI自动识别素材、编排并生成PPT。" />
+  <meta property="og:type" content="website" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <style>
+
+:root {
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --surface-2: #f8f9fb;
+  --text: #111319;
+  --muted: #69707d;
+  --line: #e5e7eb;
+  --dark: #101217;
+  --accent: #5b61ff;
+  --accent-soft: #eef0ff;
+  --success: #17845b;
+  --warning: #a45b12;
+  --radius: 22px;
+  --shadow: 0 22px 70px rgba(17, 19, 25, .08);
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 85% 0%, rgba(91, 97, 255, .12), transparent 34rem),
+    var(--bg);
+}
+
+button, input, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+
+.app-shell {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+}
+
+.topbar {
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+}
+
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  color: white;
+  background: var(--dark);
+  font-weight: 800;
+  box-shadow: 0 9px 20px rgba(16, 18, 23, .18);
+}
+
+.brand strong, .brand small { display: block; }
+.brand strong { font-size: 15px; }
+.brand small { color: var(--muted); font-size: 11px; margin-top: 3px; }
+
+.hero {
+  display: grid;
+  grid-template-columns: 1.25fr .75fr;
+  gap: 28px;
+  align-items: stretch;
+  padding: 56px 0 38px;
+}
+
+.hero-copy, .hero-card {
+  border-radius: 30px;
+}
+
+.hero-copy {
+  padding: 52px;
+  background: var(--dark);
+  color: white;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  position: relative;
+}
+
+.hero-copy::after {
+  content: "";
+  position: absolute;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  right: -190px;
+  bottom: -210px;
+  background: linear-gradient(135deg, var(--accent), transparent 65%);
+  opacity: .8;
+}
+
+.eyebrow, .section-label {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.eyebrow { color: #b7bbff; }
+
+.hero h1 {
+  margin: 18px 0 18px;
+  font-size: clamp(38px, 5vw, 68px);
+  line-height: 1.08;
+  letter-spacing: -.04em;
+}
+
+.hero p {
+  max-width: 640px;
+  margin: 0;
+  color: #b8bdc8;
+  font-size: 17px;
+  line-height: 1.8;
+}
+
+.hero-actions {
+  margin-top: 34px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.privacy-note {
+  color: #8e95a3;
+  font-size: 12px;
+}
+
+.hero-card {
+  padding: 26px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.flow-row {
+  min-height: 86px;
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 14px;
+  padding: 16px 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.flow-row:last-child { border-bottom: 0; }
+
+.flow-row > span {
+  grid-row: 1 / 3;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.flow-row b { font-size: 16px; }
+.flow-row em {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.primary-btn, .secondary-btn, .ghost-btn, .text-btn {
+  border: 0;
+  border-radius: 13px;
+  min-height: 44px;
+  padding: 0 18px;
+  font-weight: 750;
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.primary-btn {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 10px 24px rgba(91, 97, 255, .28);
+}
+
+.primary-btn:hover, .secondary-btn:hover, .ghost-btn:hover { transform: translateY(-1px); }
+
+.secondary-btn {
+  color: var(--text);
+  background: #eef0f3;
+}
+
+.ghost-btn {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.text-btn {
+  color: var(--accent);
+  background: transparent;
+  padding: 0 8px;
+}
+
+.workspace {
+  margin: 18px 0 48px;
+  background: var(--surface);
+  border-radius: 30px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.step {
+  min-height: 58px;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.step span {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  margin-right: 7px;
+  background: #e4e7ec;
+  font-size: 12px;
+}
+
+.step.active {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgba(17, 19, 25, .06);
+}
+
+.step.active span { color: white; background: var(--accent); }
+
+.panel { display: none; padding: 40px; }
+.panel.active { display: block; }
+
+.panel-heading {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 26px;
+}
+
+.section-label { color: var(--accent); }
+
+.panel-heading h2 {
+  font-size: 28px;
+  margin: 8px 0 8px;
+}
+
+.panel-heading p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.status-pill {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.status-pill.success {
+  background: #eaf7f1;
+  color: var(--success);
+}
+
+.dropzone {
+  min-height: 180px;
+  border: 1.5px dashed #c6cad4;
+  border-radius: 22px;
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: border-color .2s, background .2s;
+}
+
+.dropzone.dragover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.dropzone input, .upload-inline input { display: none; }
+
+.drop-icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--dark);
+  color: white;
+  font-size: 25px;
+  margin-bottom: 12px;
+}
+
+.dropzone strong { font-size: 17px; }
+.dropzone small { margin-top: 7px; color: var(--muted); }
+
+.project-brief {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr .8fr;
+  gap: 14px;
+  margin: 20px 0 28px;
+}
+
+.project-brief label, .instruction-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-brief span, .instruction-box span {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.project-brief input, .instruction-box textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  padding: 13px 14px;
+  outline: none;
+}
+
+.project-brief input:focus, .instruction-box textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(91, 97, 255, .1);
+}
+
+.materials-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px 0 12px;
+}
+
+.materials-header h3 { margin: 0; }
+.materials-header h3 span {
+  color: var(--accent);
+  font-size: 13px;
+}
+.materials-header small { color: var(--muted); }
+
+.material-list, .ordered-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.material-list.empty {
+  min-height: 92px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  border-radius: 15px;
+  background: var(--surface-2);
+}
+
+.material-item, .order-item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 13px;
+  align-items: center;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.file-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.file-copy { min-width: 0; }
+.file-copy b {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-copy small {
+  color: var(--muted);
+  display: block;
+  margin-top: 4px;
+}
+
+.remove-btn {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: #f1f2f4;
+  color: var(--muted);
+}
+
+.panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 28px;
+}
+
+.order-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  margin-bottom: 12px;
+  border-radius: 16px;
+  background: var(--surface-2);
+}
+
+.order-toolbar b, .order-toolbar small { display: block; }
+.order-toolbar small { color: var(--muted); margin-top: 4px; }
+
+.order-item {
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  padding: 15px;
+}
+
+.order-index {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: white;
+  background: var(--dark);
+  font-weight: 850;
+  font-size: 13px;
+}
+
+.order-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.move-group {
+  display: flex;
+  gap: 5px;
+}
+
+.move-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: white;
+}
+
+.weight-select {
+  display: flex;
+  padding: 3px;
+  border-radius: 11px;
+  background: #f0f1f4;
+}
+
+.weight-select button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.weight-select button.active {
+  background: white;
+  color: var(--text);
+  box-shadow: 0 2px 7px rgba(17,19,25,.08);
+}
+
+.instruction-box { margin-top: 18px; }
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.summary-grid > div {
+  padding: 18px;
+  border-radius: 16px;
+  background: var(--surface-2);
+}
+
+.summary-grid span, .summary-grid strong { display: block; }
+.summary-grid span { color: var(--muted); font-size: 12px; }
+.summary-grid strong { margin-top: 7px; font-size: 22px; }
+
+.outline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.outline-item {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  gap: 13px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.outline-item > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 850;
+  font-size: 12px;
+}
+
+.outline-item b, .outline-item small { display: block; }
+.outline-item small { color: var(--muted); margin-top: 5px; }
+
+.outline-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.outline-tags em {
+  font-style: normal;
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: var(--muted);
+  background: var(--surface-2);
+  font-size: 11px;
+}
+
+.add-media-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: 16px;
+  background: #f7f7ff;
+  border: 1px solid #e6e7ff;
+}
+
+.add-media-card b, .add-media-card p { display: block; }
+.add-media-card p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+
+.upload-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.generation-card {
+  max-width: 720px;
+  margin: 0 auto;
+  text-align: center;
+  padding: 34px 10px;
+}
+
+.generation-icon {
+  width: 66px;
+  height: 66px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 16px;
+  color: white;
+  background: var(--success);
+  border-radius: 22px;
+  font-size: 30px;
+  box-shadow: 0 12px 26px rgba(23,132,91,.2);
+}
+
+.generation-card h2 { margin: 10px 0 8px; font-size: 31px; }
+.generation-card > p { margin: 0; color: var(--muted); line-height: 1.7; }
+
+.progress-list {
+  text-align: left;
+  margin: 26px auto 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.progress-list > div {
+  min-height: 58px;
+  padding: 0 16px;
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+
+.progress-list > div:last-child { border-bottom: 0; }
+.progress-list span { color: var(--muted); font-weight: 850; }
+.progress-list em { color: var(--muted); font-style: normal; font-size: 12px; }
+.progress-list .done span { color: var(--success); }
+.progress-list .working { background: var(--accent-soft); }
+.progress-list .working span, .progress-list .working em { color: var(--accent); }
+
+.demo-warning {
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #fff7eb;
+  color: #7b4b14;
+  font-size: 13px;
+  line-height: 1.65;
+  text-align: left;
+}
+
+.final-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 22px;
+}
+
+footer {
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(28px + env(safe-area-inset-bottom));
+  transform: translate(-50%, 20px);
+  max-width: calc(100% - 30px);
+  padding: 12px 16px;
+  border-radius: 12px;
+  color: white;
+  background: var(--dark);
+  opacity: 0;
+  pointer-events: none;
+  transition: .22s ease;
+  z-index: 20;
+  box-shadow: 0 12px 34px rgba(0,0,0,.22);
+}
+
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (max-width: 900px) {
+  .hero { grid-template-columns: 1fr; padding-top: 26px; }
+  .hero-copy { padding: 38px; }
+  .project-brief { grid-template-columns: 1fr; }
+  .summary-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 640px) {
+  body { background: var(--bg); }
+  .app-shell { width: 100%; }
+  .topbar { height: 66px; padding: 0 16px; }
+  .brand small { display: none; }
+  .topbar .ghost-btn { min-height: 38px; padding: 0 12px; font-size: 12px; }
+
+  .hero { padding: 0; gap: 0; }
+  .hero-copy {
+    border-radius: 0 0 28px 28px;
+    padding: 42px 22px 34px;
+  }
+  .hero h1 { font-size: 40px; }
+  .hero p { font-size: 15px; }
+  .hero-card {
+    margin: 14px 14px 0;
+    border-radius: 22px;
+    padding: 14px;
+  }
+  .flow-row { min-height: 72px; padding: 11px 4px; }
+
+  .workspace {
+    margin: 14px;
+    border-radius: 22px;
+  }
+  .steps {
+    overflow-x: auto;
+    grid-template-columns: repeat(4, minmax(108px, 1fr));
+  }
+  .step { font-size: 12px; min-height: 50px; }
+
+  .panel { padding: 23px 16px; }
+  .panel-heading { gap: 10px; margin-bottom: 20px; }
+  .panel-heading h2 { font-size: 23px; }
+  .panel-heading .status-pill { display: none; }
+  .dropzone { min-height: 154px; }
+
+  .materials-header { align-items: flex-end; }
+  .materials-header small { max-width: 140px; text-align: right; }
+
+  .material-item {
+    grid-template-columns: 40px minmax(0, 1fr) 32px;
+  }
+
+  .order-toolbar { align-items: flex-start; gap: 12px; }
+  .order-toolbar .ghost-btn { padding: 0 10px; font-size: 12px; }
+
+  .order-item {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+  .order-controls {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+  }
+  .weight-select button { padding: 0 8px; }
+
+  .summary-grid { grid-template-columns: 1fr 1fr; }
+  .summary-grid > div { padding: 14px; }
+  .summary-grid strong { font-size: 19px; }
+
+  .outline-item {
+    grid-template-columns: 35px minmax(0, 1fr);
+  }
+  .outline-tags {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    padding-left: 48px;
+  }
+
+  .add-media-card { align-items: flex-start; flex-direction: column; }
+  .panel-footer { gap: 8px; }
+  .panel-footer button { flex: 1; padding: 0 10px; font-size: 13px; }
+
+  .final-actions { flex-direction: column; }
+  footer { padding: 0 16px; }
+
+  @supports (padding: max(0px)) {
+    .topbar { padding-top: env(safe-area-inset-top); height: calc(66px + env(safe-area-inset-top)); }
+  }
+}
+
+</style>
+  <title>PPT资料管家 · 测试版</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="首页">
+        <span class="brand-mark">稿</span>
+        <span>
+          <strong>PPT资料管家</strong>
+          <small>测试版 · 客户编排层</small>
+        </span>
+      </a>
+      <button class="ghost-btn" id="shareBtn" type="button">微信分享</button>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <span class="eyebrow">资料很多，也不用自己整理</span>
+          <h1>你只决定顺序和重点，<br />剩下交给 AI。</h1>
+          <p>批量上传 PDF、Word、Excel、照片和视频。AI自动识别素材，客户只做一次宏观审查。</p>
+          <div class="hero-actions">
+            <button class="primary-btn" id="startBtn" type="button">开始创建PPT</button>
+            <span class="privacy-note">资料仅用于当前项目处理</span>
+          </div>
+        </div>
+
+        <div class="hero-card" aria-label="产品流程">
+          <div class="flow-row"><span>01</span><b>上传全部资料</b><em>无需预整理</em></div>
+          <div class="flow-row"><span>02</span><b>客户指定顺序</b><em>AI不得擅改</em></div>
+          <div class="flow-row"><span>03</span><b>调整素材权重</b><em>核心 / 重要 / 参考</em></div>
+          <div class="flow-row"><span>04</span><b>AI生成与质检</b><em>输出PPTX + PDF</em></div>
+        </div>
+      </section>
+
+      <section class="workspace" id="workspace">
+        <nav class="steps" aria-label="制作步骤">
+          <button class="step active" data-step="1"><span>1</span>上传素材</button>
+          <button class="step" data-step="2"><span>2</span>指定顺序</button>
+          <button class="step" data-step="3"><span>3</span>确认编排</button>
+          <button class="step" data-step="4"><span>4</span>生成交付</button>
+        </nav>
+
+        <section class="panel active" data-panel="1">
+          <div class="panel-heading">
+            <div>
+              <span class="section-label">STEP 01</span>
+              <h2>把相关素材全部放进来</h2>
+              <p>系统会自动识别文件类型。上传顺序只用于定位，不等于最终PPT顺序。</p>
+            </div>
+            <button class="text-btn" id="loadDemoBtn" type="button">载入示例</button>
+          </div>
+
+          <label class="dropzone" id="dropzone">
+            <input id="fileInput" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.png,.jpg,.jpeg,.webp,.mp4,.mov,.m4v,.mp3,.wav" />
+            <span class="drop-icon">＋</span>
+            <strong>点击或拖入文件</strong>
+            <small>支持文档、表格、PPT、照片、视频和音频</small>
+          </label>
+
+          <div class="project-brief">
+            <label>
+              <span>这份PPT用来做什么？</span>
+              <input id="purposeInput" placeholder="例如：向领导汇报项目进展" />
+            </label>
+            <label>
+              <span>主要给谁看？</span>
+              <input id="audienceInput" placeholder="例如：公司管理层、客户、培训学员" />
+            </label>
+            <label>
+              <span>页数或时长</span>
+              <input id="limitInput" placeholder="例如：15页以内 / 20分钟" />
+            </label>
+          </div>
+
+          <div class="materials-header">
+            <h3>已上传素材 <span id="materialCount">0</span></h3>
+            <small>稍后由客户指定最终顺序</small>
+          </div>
+          <div class="material-list empty" id="materialList">
+            <p>还没有素材。可以先载入示例体验完整流程。</p>
+          </div>
+
+          <div class="panel-footer">
+            <span></span>
+            <button class="primary-btn" data-next="2" type="button">下一步：指定顺序</button>
+          </div>
+        </section>
+
+        <section class="panel" data-panel="2">
+          <div class="panel-heading">
+            <div>
+              <span class="section-label">STEP 02</span>
+              <h2>客户指定顺序和权重</h2>
+              <p>上下移动素材，告诉AI先讲什么、后讲什么。每份素材可以设置采用权重。</p>
+            </div>
+            <span class="status-pill">客户决策优先</span>
+          </div>
+
+          <div class="order-toolbar">
+            <div>
+              <b>最终内容顺序</b>
+              <small>使用上下箭头调整，移动端也能操作</small>
+            </div>
+            <button class="ghost-btn" id="aiSuggestBtn" type="button">让AI给出建议</button>
+          </div>
+
+          <div class="ordered-list" id="orderedList"></div>
+
+          <label class="instruction-box">
+            <span>补充一句编排要求</span>
+            <textarea id="instructionInput" rows="3" placeholder="例如：先讲政策背景，再讲项目成果；第二份材料作为核心，视频放在开场。"></textarea>
+          </label>
+
+          <div class="panel-footer">
+            <button class="secondary-btn" data-prev="1" type="button">返回上传</button>
+            <button class="primary-btn" data-next="3" type="button">生成编排预览</button>
+          </div>
+        </section>
+
+        <section class="panel" data-panel="3">
+          <div class="panel-heading">
+            <div>
+              <span class="section-label">STEP 03</span>
+              <h2>客户只审提纲，不逐页做PPT</h2>
+              <p>这是AI拟定的内容编排。你可以调整章节顺序、页数和重点，再锁定生成。</p>
+            </div>
+            <span class="status-pill success">AI已完成初步编排</span>
+          </div>
+
+          <div class="summary-grid">
+            <div><span>预计页数</span><strong id="pageEstimate">16页</strong></div>
+            <div><span>汇报时长</span><strong id="timeEstimate">18分钟</strong></div>
+            <div><span>采用素材</span><strong id="usedEstimate">0份</strong></div>
+            <div><span>待处理冲突</span><strong>0项</strong></div>
+          </div>
+
+          <div class="outline" id="outline"></div>
+
+          <div class="add-media-card">
+            <div>
+              <b>还需要补充照片、视频或Logo？</b>
+              <p>上传后，AI会自动判断放在整套、某章节或某页附近。</p>
+            </div>
+            <label class="secondary-btn upload-inline">
+              补充媒体
+              <input id="extraMediaInput" type="file" multiple accept="image/*,video/*" />
+            </label>
+          </div>
+
+          <div class="panel-footer">
+            <button class="secondary-btn" data-prev="2" type="button">返回调整</button>
+            <button class="primary-btn" data-next="4" type="button">锁定编排并生成</button>
+          </div>
+        </section>
+
+        <section class="panel" data-panel="4">
+          <div class="generation-card">
+            <div class="generation-icon">✓</div>
+            <span class="section-label">STEP 04</span>
+            <h2>生成任务已创建</h2>
+            <p>正式版本会在云端解析资料、生成可编辑PPTX，并执行顺序、事实、版式和媒体质检。</p>
+
+            <div class="progress-list">
+              <div class="done"><span>✓</span><b>素材索引</b><em>已完成</em></div>
+              <div class="done"><span>✓</span><b>客户编排锁</b><em>已完成</em></div>
+              <div class="working"><span>···</span><b>PPT页面生成</b><em>处理中</em></div>
+              <div><span>4</span><b>自动质检</b><em>等待中</em></div>
+              <div><span>5</span><b>PPTX与PDF交付</b><em>等待中</em></div>
+            </div>
+
+            <div class="demo-warning">
+              当前是前端交互原型，已经实现上传、排序、权重、编排预览和微信分享入口；AI解析与PPTX生成将在下一阶段接入后端。
+            </div>
+
+            <div class="final-actions">
+              <button class="primary-btn" id="shareProjectBtn" type="button">分享项目链接</button>
+              <button class="secondary-btn" id="restartBtn" type="button">新建项目</button>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer>
+      <span>PPT资料管家 · MVP</span>
+      <span>客户指定顺序 · AI负责制作</span>
+    </footer>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script>
+
+const PUBLIC_SHARE_URL = "https://chaogecodex.github.io/ppt-material-manager/";
+// 正式部署后，把这里改成公开的 HTTPS 地址，例如：
+// const PUBLIC_SHARE_URL = "https://ppt.example.com";
+
+const state = {
+  materials: [],
+  currentStep: 1,
+};
+
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => [...document.querySelectorAll(selector)];
+
+const demoMaterials = [
+  { name: "国家危险废物名录和危险废物鉴别管理.pdf", type: "PDF", size: "3.8 MB", weight: "重要" },
+  { name: "项目年度数据.xlsx", type: "XLSX", size: "786 KB", weight: "核心" },
+  { name: "现场照片（12张）", type: "IMG", size: "18.4 MB", weight: "参考" },
+  { name: "项目汇报视频.mp4", type: "VIDEO", size: "42.1 MB", weight: "参考" },
+];
+
+function toast(message) {
+  const el = $("#toast");
+  el.textContent = message;
+  el.classList.add("show");
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+function fileType(name, mime = "") {
+  const ext = (name.split(".").pop() || "").toUpperCase();
+  if (mime.startsWith("image/")) return "IMG";
+  if (mime.startsWith("video/")) return "VIDEO";
+  if (mime.startsWith("audio/")) return "AUDIO";
+  return ext.slice(0, 6) || "FILE";
+}
+
+function fileSize(bytes) {
+  if (!bytes) return "—";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let index = 0;
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index++;
+  }
+  return `${value.toFixed(index ? 1 : 0)} ${units[index]}`;
+}
+
+function saveState() {
+  localStorage.setItem("pptAgentMvp", JSON.stringify({
+    materials: state.materials,
+    purpose: $("#purposeInput")?.value || "",
+    audience: $("#audienceInput")?.value || "",
+    limit: $("#limitInput")?.value || "",
+    instruction: $("#instructionInput")?.value || "",
+  }));
+}
+
+function restoreState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("pptAgentMvp") || "null");
+    if (!saved) return;
+    state.materials = saved.materials || [];
+    $("#purposeInput").value = saved.purpose || "";
+    $("#audienceInput").value = saved.audience || "";
+    $("#limitInput").value = saved.limit || "";
+    $("#instructionInput").value = saved.instruction || "";
+  } catch {}
+}
+
+function addFiles(files) {
+  [...files].forEach(file => {
+    state.materials.push({
+      id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+      name: file.name,
+      type: fileType(file.name, file.type),
+      size: fileSize(file.size),
+      weight: file.type.startsWith("image/") || file.type.startsWith("video/") ? "参考" : "重要",
+    });
+  });
+  renderMaterials();
+  saveState();
+}
+
+function loadDemo() {
+  state.materials = demoMaterials.map((item, i) => ({ ...item, id: `demo-${i}` }));
+  $("#purposeInput").value = "向管理层汇报危险废物管理与项目进展";
+  $("#audienceInput").value = "管理层与相关业务部门";
+  $("#limitInput").value = "15—18页 / 20分钟";
+  renderMaterials();
+  saveState();
+  toast("示例素材已载入");
+}
+
+function renderMaterials() {
+  const list = $("#materialList");
+  $("#materialCount").textContent = state.materials.length;
+
+  if (!state.materials.length) {
+    list.className = "material-list empty";
+    list.innerHTML = "<p>还没有素材。可以先载入示例体验完整流程。</p>";
+    $("#orderedList").innerHTML = "";
+    return;
+  }
+
+  list.className = "material-list";
+  list.innerHTML = state.materials.map(item => `
+    <div class="material-item">
+      <span class="file-icon">${item.type}</span>
+      <div class="file-copy">
+        <b title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</b>
+        <small>${item.size} · 待客户排序</small>
+      </div>
+      <button class="remove-btn" data-remove="${item.id}" aria-label="删除">×</button>
+    </div>
+  `).join("");
+
+  $$("[data-remove]").forEach(btn => btn.onclick = () => {
+    state.materials = state.materials.filter(item => item.id !== btn.dataset.remove);
+    renderMaterials();
+    saveState();
+  });
+
+  renderOrderedList();
+}
+
+function renderOrderedList() {
+  const list = $("#orderedList");
+  if (!state.materials.length) {
+    list.innerHTML = `<div class="material-list empty"><p>请先上传至少一份素材。</p></div>`;
+    return;
+  }
+
+  list.innerHTML = state.materials.map((item, index) => `
+    <div class="order-item">
+      <span class="order-index">${String(index + 1).padStart(2, "0")}</span>
+      <div class="file-copy">
+        <b>${escapeHtml(item.name)}</b>
+        <small>${item.type} · ${item.size}</small>
+      </div>
+      <div class="order-controls">
+        <div class="move-group">
+          <button class="move-btn" data-move-up="${item.id}" ${index === 0 ? "disabled" : ""} aria-label="上移">↑</button>
+          <button class="move-btn" data-move-down="${item.id}" ${index === state.materials.length - 1 ? "disabled" : ""} aria-label="下移">↓</button>
+        </div>
+        <div class="weight-select" aria-label="素材权重">
+          ${["核心", "重要", "参考", "忽略"].map(weight => `
+            <button data-weight="${weight}" data-id="${item.id}" class="${item.weight === weight ? "active" : ""}">${weight}</button>
+          `).join("")}
+        </div>
+      </div>
+    </div>
+  `).join("");
+
+  $$("[data-move-up]").forEach(btn => btn.onclick = () => moveMaterial(btn.dataset.moveUp, -1));
+  $$("[data-move-down]").forEach(btn => btn.onclick = () => moveMaterial(btn.dataset.moveDown, 1));
+  $$("[data-weight]").forEach(btn => btn.onclick = () => {
+    const item = state.materials.find(x => x.id === btn.dataset.id);
+    if (item) item.weight = btn.dataset.weight;
+    renderOrderedList();
+    saveState();
+  });
+}
+
+function moveMaterial(id, offset) {
+  const index = state.materials.findIndex(x => x.id === id);
+  const target = index + offset;
+  if (index < 0 || target < 0 || target >= state.materials.length) return;
+  [state.materials[index], state.materials[target]] = [state.materials[target], state.materials[index]];
+  renderOrderedList();
+  saveState();
+}
+
+function generateOutline() {
+  const used = state.materials.filter(item => item.weight !== "忽略");
+  const limit = $("#limitInput").value.trim();
+  const instruction = $("#instructionInput").value.trim();
+
+  const pageGuess = Math.max(8, Math.min(28, 4 + used.length * 3));
+  $("#pageEstimate").textContent = limit.includes("页") ? limit.split("/")[0].trim() : `${pageGuess}页`;
+  $("#timeEstimate").textContent = limit.includes("分钟") ? (limit.split("/")[1] || limit).trim() : `${Math.round(pageGuess * 1.1)}分钟`;
+  $("#usedEstimate").textContent = `${used.length}份`;
+
+  const outline = $("#outline");
+  if (!used.length) {
+    outline.innerHTML = `<div class="material-list empty"><p>没有可采用素材，请返回调整权重。</p></div>`;
+    return;
+  }
+
+  const typeLabel = item => {
+    if (item.type === "VIDEO") return ["视频页", "关键帧"];
+    if (item.type === "IMG") return ["照片组", "成果展示"];
+    if (["XLS", "XLSX", "CSV"].includes(item.type)) return ["数据图表", "数据卡"];
+    if (item.type === "PDF") return ["内容提炼", "结构图"];
+    return ["图文页", "重点摘要"];
+  };
+
+  outline.innerHTML = used.map((item, index) => {
+    const tags = typeLabel(item);
+    return `
+      <div class="outline-item">
+        <span>${String(index + 1).padStart(2, "0")}</span>
+        <div>
+          <b>${escapeHtml(cleanTitle(item.name))}</b>
+          <small>${item.weight}素材 · 按客户指定顺序编排${instruction ? ` · 已读取补充要求` : ""}</small>
+        </div>
+        <div class="outline-tags">
+          ${tags.map(t => `<em>${t}</em>`).join("")}
+          <em>${item.weight}</em>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function cleanTitle(name) {
+  return name.replace(/\.[^.]+$/, "").replace(/[（(]\d+张[）)]/, "");
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function goStep(step) {
+  if (step > 1 && !state.materials.length) {
+    toast("请先上传素材或载入示例");
+    return;
+  }
+
+  if (step === 3) generateOutline();
+
+  state.currentStep = step;
+  $$(".panel").forEach(panel => panel.classList.toggle("active", Number(panel.dataset.panel) === step));
+  $$(".step").forEach(button => button.classList.toggle("active", Number(button.dataset.step) === step));
+  $("#workspace").scrollIntoView({ behavior: "smooth", block: "start" });
+  saveState();
+}
+
+function getPublicShareUrl() {
+  if (PUBLIC_SHARE_URL && /^https?:\/\//i.test(PUBLIC_SHARE_URL)) {
+    return PUBLIC_SHARE_URL;
+  }
+
+  if (/^https?:$/i.test(location.protocol)) {
+    return location.href;
+  }
+
+  return "";
+}
+
+async function sharePage() {
+  const publicUrl = getPublicShareUrl();
+  const title = "PPT资料管家";
+  const intro = "上传全部资料，指定顺序和重点，AI自动编排并生成PPT。";
+  const data = publicUrl
+    ? { title, text: intro, url: publicUrl }
+    : { title, text: intro };
+
+  if (navigator.share) {
+    try {
+      await navigator.share(data);
+      if (!publicUrl) {
+        toast("当前是本地预览，只分享产品介绍；部署后才会带网页链接");
+      }
+      return;
+    } catch {}
+  }
+
+  try {
+    await navigator.clipboard.writeText(publicUrl || intro);
+    toast(publicUrl
+      ? "网页链接已复制，可粘贴到微信"
+      : "产品介绍已复制；本地文件不能生成可访问链接");
+  } catch {
+    toast(publicUrl
+      ? "请复制网页地址后发送到微信"
+      : "当前是本地预览，正式部署后才能分享网页链接");
+  }
+}
+
+function detectWeChat() {
+  const isWeChat = /MicroMessenger/i.test(navigator.userAgent);
+  const hasPublicUrl = Boolean(getPublicShareUrl());
+
+  if (isWeChat) {
+    $(".privacy-note").textContent = hasPublicUrl
+      ? "已适配微信内置浏览器"
+      : "本地预览不能作为微信网页链接传播";
+  }
+
+  if (!hasPublicUrl) {
+    $("#shareBtn").textContent = "分享产品介绍";
+    $("#shareProjectBtn").textContent = "分享产品介绍";
+  }
+}
+
+$("#fileInput").addEventListener("change", event => addFiles(event.target.files));
+$("#extraMediaInput").addEventListener("change", event => {
+  addFiles(event.target.files);
+  generateOutline();
+  toast("新媒体已加入，AI将自动判断位置");
+});
+
+const dropzone = $("#dropzone");
+["dragenter", "dragover"].forEach(type => dropzone.addEventListener(type, event => {
+  event.preventDefault();
+  dropzone.classList.add("dragover");
+}));
+["dragleave", "drop"].forEach(type => dropzone.addEventListener(type, event => {
+  event.preventDefault();
+  dropzone.classList.remove("dragover");
+}));
+dropzone.addEventListener("drop", event => addFiles(event.dataTransfer.files));
+
+$("#loadDemoBtn").onclick = loadDemo;
+$("#startBtn").onclick = () => $("#workspace").scrollIntoView({ behavior: "smooth" });
+$("#shareBtn").onclick = sharePage;
+$("#shareProjectBtn").onclick = sharePage;
+
+$("#aiSuggestBtn").onclick = () => {
+  toast("AI建议已生成，但不会自动改变客户顺序");
+};
+
+$("#restartBtn").onclick = () => {
+  state.materials = [];
+  localStorage.removeItem("pptAgentMvp");
+  ["purposeInput", "audienceInput", "limitInput", "instructionInput"].forEach(id => $("#" + id).value = "");
+  renderMaterials();
+  goStep(1);
+  toast("已新建空白项目");
+};
+
+$$("[data-next]").forEach(btn => btn.onclick = () => goStep(Number(btn.dataset.next)));
+$$("[data-prev]").forEach(btn => btn.onclick = () => goStep(Number(btn.dataset.prev)));
+$$(".step").forEach(btn => btn.onclick = () => goStep(Number(btn.dataset.step)));
+["purposeInput", "audienceInput", "limitInput", "instructionInput"].forEach(id => {
+  $("#" + id).addEventListener("input", saveState);
+});
+
+restoreState();
+renderMaterials();
+detectWeChat();
+
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
+
+</script>
+</body>
+</html>
