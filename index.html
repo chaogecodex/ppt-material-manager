@@ -4,10 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#101217" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23101217'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-family='Arial' font-size='34' font-weight='700' fill='white'%3EP%3C/text%3E%3C/svg%3E" />
   <meta name="description" content="上传全部资料，指定顺序和重点，AI自动编排并生成PPT。" />
   <meta property="og:title" content="PPT资料管家｜把资料交给AI" />
   <meta property="og:description" content="客户只指定顺序和重点，AI自动识别素材、编排并生成PPT。" />
   <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://ppt-material-manager-ppt-ai-d8gx2g506c70eb54e.webapps.tcloudbase.com/" />
+  <link rel="canonical" href="https://ppt-material-manager-ppt-ai-d8gx2g506c70eb54e.webapps.tcloudbase.com/" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <style>
@@ -716,7 +719,86 @@ footer {
 
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+.access-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, .9fr);
+  min-height: 100dvh;
+  color: white;
+  background: var(--dark);
+}
+
+.access-gate[hidden] { display: none; }
+
+.access-intro,
+.access-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(36px, 7vw, 100px);
+}
+
+.access-intro {
+  position: relative;
+  overflow: hidden;
+  border-right: 1px solid rgba(255,255,255,.1);
+}
+
+.access-intro::after {
+  content: "";
+  position: absolute;
+  right: -160px;
+  bottom: -210px;
+  width: 430px;
+  height: 430px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), transparent 67%);
+  opacity: .75;
+}
+
+.access-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 56px;
+  font-weight: 800;
+}
+
+.access-brand .brand-mark { background: white; color: var(--dark); }
+.access-intro h1 { max-width: 680px; margin: 0 0 18px; font-size: clamp(42px, 6vw, 76px); line-height: 1.04; letter-spacing: -.05em; }
+.access-intro p { max-width: 580px; margin: 0; color: #b8bdc8; font-size: 16px; line-height: 1.8; }
+
+.access-panel { color: var(--text); background: var(--surface); }
+.access-form { width: min(420px, 100%); margin: 0 auto; }
+.access-form .section-label { color: var(--success); }
+.access-form h2 { margin: 12px 0 8px; font-size: 32px; letter-spacing: -.03em; }
+.access-form > p { margin: 0 0 28px; color: var(--muted); line-height: 1.7; }
+.access-form label { display: grid; gap: 8px; margin-top: 16px; font-size: 13px; font-weight: 750; }
+.access-form input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 15px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  color: var(--text);
+  background: var(--surface-2);
+  outline: none;
+}
+.access-form input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.access-form .primary-btn { width: 100%; min-height: 52px; margin-top: 22px; }
+.access-error { min-height: 22px; margin-top: 12px; color: #b42318; font-size: 13px; }
+.access-help { margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.7; }
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.account-btn { color: var(--muted); }
+
 @media (max-width: 900px) {
+  .access-gate { grid-template-columns: 1fr; }
+  .access-intro { min-height: 38vh; border-right: 0; border-bottom: 1px solid rgba(255,255,255,.1); }
+  .access-brand { margin-bottom: 28px; }
+  .access-intro h1 { font-size: clamp(38px, 9vw, 58px); }
+  .access-panel { justify-content: flex-start; }
   .hero { grid-template-columns: 1fr; padding-top: 26px; }
   .hero-copy { padding: 38px; }
   .project-brief { grid-template-columns: 1fr; }
@@ -724,6 +806,14 @@ footer {
 }
 
 @media (max-width: 640px) {
+  .access-gate { display: block; overflow-y: auto; }
+  .access-intro, .access-panel { padding: 28px 22px; }
+  .access-intro { min-height: 285px; }
+  .access-brand { margin-bottom: 34px; }
+  .access-intro h1 { font-size: 39px; }
+  .access-intro p { font-size: 14px; }
+  .access-panel { min-height: calc(100dvh - 285px); }
+  .access-form h2 { font-size: 27px; }
   body { background: var(--bg); }
   .app-shell { width: 100%; }
   .topbar { height: 66px; padding: 0 16px; }
@@ -807,19 +897,40 @@ footer {
 }
 
 </style>
-  <title>PPT资料管家 · 测试版</title>
+  <title>PPT资料管家｜把资料交给 AI</title>
 </head>
 <body>
+  <section class="access-gate" id="accessGate" aria-label="邀请码登录">
+    <div class="access-intro">
+      <div class="access-brand"><span class="brand-mark">稿</span><span>PPT资料管家</span></div>
+      <h1>把资料交给 AI，<br />把判断留给你。</h1>
+      <p>当前为小范围测试。登录后即可上传资料、指定顺序和重点，并让 AI 完成初步编排。</p>
+    </div>
+    <div class="access-panel">
+      <form class="access-form" id="loginForm">
+        <span class="section-label">PRIVATE BETA</span>
+        <h2>邀请码登录</h2>
+        <p>输入负责人发给你的邀请码。邀请码统一有效 30 天，本设备登录状态不会超过邀请码期限。</p>
+        <label>邀请码<input id="loginInviteCode" name="inviteCode" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="PPT-XXXX-XXXX" required /></label>
+        <button class="primary-btn" id="loginBtn" type="submit">使用邀请码进入</button>
+        <div class="access-error" id="loginError" role="alert"></div>
+        <div class="access-help">已有项目会继续保留在本设备。请勿把邀请码发布到公开群聊或网页。</div>
+      </form>
+    </div>
+  </section>
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="#" aria-label="首页">
         <span class="brand-mark">稿</span>
         <span>
           <strong>PPT资料管家</strong>
-          <small>测试版 · 客户编排层</small>
+          <small>微信 H5 · 客户编排层</small>
         </span>
       </a>
-      <button class="ghost-btn" id="shareBtn" type="button">微信分享</button>
+      <div class="topbar-actions">
+        <button class="ghost-btn account-btn" id="logoutBtn" type="button" hidden>退出</button>
+        <button class="ghost-btn" id="shareBtn" type="button">微信分享</button>
+      </div>
     </header>
 
     <main>
@@ -992,7 +1103,7 @@ footer {
     </main>
 
     <footer>
-      <span>PPT资料管家 · MVP</span>
+      <span>PPT资料管家 · 微信 H5</span>
       <span>客户指定顺序 · AI负责制作</span>
     </footer>
   </div>
@@ -1000,9 +1111,10 @@ footer {
   <div class="toast" id="toast" role="status"></div>
   <script>
 
-const PUBLIC_SHARE_URL = "https://chaogecodex.github.io/ppt-material-manager/";
+const PUBLIC_SHARE_URL = "https://ppt-material-manager-ppt-ai-d8gx2g506c70eb54e.webapps.tcloudbase.com/";
 const API_BASE_URL = "https://ppt-ai-api-294833-10-1466238220.sh.run.tcloudbase.com";
 const LOCAL_STATE_KEY = "pptAgentMvp";
+const ACCESS_SESSION_KEY = "pptAccessSession";
 
 const state = {
   materials: [],
@@ -1013,6 +1125,8 @@ const state = {
   demoMode: false,
   dirty: false,
   busy: false,
+  accessToken: "",
+  accessUser: "",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -1102,16 +1216,94 @@ function briefPayload() {
   };
 }
 
+function readAccessSession() {
+  try {
+    const session = JSON.parse(localStorage.getItem(ACCESS_SESSION_KEY) || "null");
+    if (!session?.token || !session?.username || !session?.expiresAt) return null;
+    if (Date.parse(session.expiresAt) <= Date.now()) {
+      localStorage.removeItem(ACCESS_SESSION_KEY);
+      return null;
+    }
+    return session;
+  } catch (error) {
+    console.error("登录状态读取失败", error);
+    localStorage.removeItem(ACCESS_SESSION_KEY);
+    return null;
+  }
+}
+
+function saveAccessSession(session) {
+  localStorage.setItem(ACCESS_SESSION_KEY, JSON.stringify(session));
+}
+
+function clearAccessSession() {
+  state.accessToken = "";
+  state.accessUser = "";
+  localStorage.removeItem(ACCESS_SESSION_KEY);
+  $("#logoutBtn").hidden = true;
+}
+
+function showAccessGate(message = "") {
+  $("#accessGate").hidden = false;
+  $("#loginError").textContent = message;
+  requestAnimationFrame(() => $("#loginInviteCode").focus());
+}
+
+function hideAccessGate() {
+  $("#accessGate").hidden = true;
+  $("#loginInviteCode").value = "";
+  $("#loginError").textContent = "";
+  const logout = $("#logoutBtn");
+  logout.hidden = !state.accessUser;
+  logout.textContent = state.accessUser ? "测试用户 · 退出" : "退出";
+}
+
+async function restoreAccessSession() {
+  const session = readAccessSession();
+  if (!session) return false;
+  state.accessToken = session.token;
+  state.accessUser = session.username;
+  try {
+    const result = await apiRequest("/auth/session");
+    state.accessUser = result.user.username;
+    hideAccessGate();
+    return true;
+  } catch (error) {
+    clearAccessSession();
+    return false;
+  }
+}
+
+async function loginWithInviteCode(code) {
+  const result = await apiRequest("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  state.accessToken = result.token;
+  state.accessUser = result.user.username;
+  saveAccessSession({
+    token: result.token,
+    username: result.user.username,
+    expiresAt: result.expiresAt,
+  });
+  hideAccessGate();
+  toast("登录成功");
+}
+
 async function apiRequest(path, options = {}) {
   const headers = new Headers(options.headers || {});
   if (state.projectToken) headers.set("X-Project-Token", state.projectToken);
+  if (state.accessToken) headers.set("Authorization", `Bearer ${state.accessToken}`);
 
   const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json") ? await response.json() : null;
   if (!response.ok) {
     const message = payload?.detail || payload?.message || `请求失败（${response.status}）`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   return payload;
 }
@@ -1128,11 +1320,20 @@ function applyProject(project) {
 
 async function createProject() {
   const payload = briefPayload();
-  const result = await apiRequest("/projects", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  let result;
+  try {
+    result = await apiRequest("/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    if (error.status === 401) {
+      clearAccessSession();
+      showAccessGate("登录已失效，请重新登录");
+    }
+    throw error;
+  }
   state.projectId = result.project.id;
   state.projectToken = result.accessToken;
   state.demoMode = false;
@@ -1544,9 +1745,39 @@ const dropzone = $("#dropzone");
 dropzone.addEventListener("drop", event => runAction(() => addFiles(event.dataTransfer.files)));
 
 $("#loadDemoBtn").onclick = () => runAction(loadDemo);
-$("#startBtn").onclick = () => $("#workspace").scrollIntoView({ behavior: "smooth" });
+$("#startBtn").onclick = () => {
+  if (!state.accessToken && !state.projectId) {
+    showAccessGate("请先使用邀请码登录");
+    return;
+  }
+  $("#workspace").scrollIntoView({ behavior: "smooth" });
+};
 $("#shareBtn").onclick = sharePage;
 $("#shareProjectBtn").onclick = sharePage;
+
+$("#loginForm").addEventListener("submit", event => {
+  event.preventDefault();
+  const button = $("#loginBtn");
+  const code = $("#loginInviteCode").value.trim().toUpperCase();
+  $("#loginError").textContent = "";
+  button.disabled = true;
+  button.textContent = "正在验证…";
+  loginWithInviteCode(code)
+    .catch(error => {
+      if (error?.status === 401 || error?.status === 429) console.warn("登录未通过");
+      else console.error("登录失败", error);
+      $("#loginError").textContent = error?.message || "登录失败，请稍后重试";
+    })
+    .finally(() => {
+      button.disabled = false;
+      button.textContent = "使用邀请码进入";
+    });
+});
+
+$("#logoutBtn").onclick = () => {
+  clearAccessSession();
+  showAccessGate("已退出，请使用邀请码重新登录");
+};
 
 $("#aiSuggestBtn").onclick = () => {
   toast("AI建议已生成，但不会自动改变客户顺序");
@@ -1563,6 +1794,7 @@ $("#restartBtn").onclick = () => {
   ["purposeInput", "audienceInput", "limitInput", "instructionInput"].forEach(id => $("#" + id).value = "");
   renderMaterials();
   showStep(1);
+  if (!state.accessToken) showAccessGate("新建项目需要邀请码登录");
   toast("已新建空白项目");
 };
 
@@ -1579,6 +1811,7 @@ $$(".step").forEach(btn => btn.onclick = () => runAction(() => goStep(Number(btn
 async function initialize() {
   restoreLocalState();
   if (state.projectId && state.projectToken) {
+    hideAccessGate();
     try {
       await restoreRemoteProject();
       toast("云端项目已恢复");
@@ -1591,7 +1824,10 @@ async function initialize() {
       state.currentStep = 1;
       localStorage.removeItem(LOCAL_STATE_KEY);
       toast("项目恢复失败，请重新上传资料");
+      if (!await restoreAccessSession()) showAccessGate();
     }
+  } else if (!await restoreAccessSession()) {
+    showAccessGate();
   }
 
   renderMaterials();
@@ -1604,10 +1840,6 @@ initialize().catch(error => {
   console.error("页面初始化失败", error);
   toast("页面初始化失败，请刷新重试");
 });
-
-if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-  navigator.serviceWorker.register("./sw.js").catch(() => {});
-}
 
 </script>
 </body>
