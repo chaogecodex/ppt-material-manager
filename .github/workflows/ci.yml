@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同一分支上的新提交会取消尚未跑完的旧任务，避免排队浪费。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: 后端回归
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: api/requirements.txt
+
+      - name: 安装后端依赖
+        run: pip install -r api/requirements.txt
+
+      # 必须在 api/ 目录下运行：测试用例里是 `import main`，
+      # 依赖当前工作目录进入 sys.path 才能找到 main.py。
+      # -p "test_*.py" 会跳过 online_e2e.py——那个要连真实后端和 API key，
+      # 不能在 CI 里跑。
+      - name: 运行后端回归
+        working-directory: api
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
+  frontend:
+    name: 前端回归
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/frontend/package-lock.json
+
+      - name: 检查 index.html 内联脚本语法
+        run: |
+          sed -n '/^  <script>$/,/^<\/script>$/p' index.html | sed '1d;$d' > /tmp/inline.js
+          node --check /tmp/inline.js
+
+      - name: 安装测试依赖
+        working-directory: tests/frontend
+        run: npm ci
+
+      # 浏览器体积大、下载慢，按 playwright 版本缓存；版本不变就不用再下。
+      - name: 缓存 Chromium
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-shell-${{ runner.os }}-${{ hashFiles('tests/frontend/package-lock.json') }}
+
+      # 只装 headless shell（114MB），不装完整 chromium。
+      # chromium.launch() 无头模式跑的就是 headless shell——装 chromium 会连
+      # 完整 Chrome(184MB) 和 FFmpeg 一起拖下来，而这两个从没被启动过。
+      #
+      # 另外刻意不加 --with-deps：那一步要 19 秒且装的基本是字体包，
+      # 而 ubuntu-latest 镜像已自带所需系统库。这些用例只断言 textContent，
+      # 不截图不录像，字体渲染与结果无关。
+      - name: 安装 Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        working-directory: tests/frontend
+        run: npx playwright install chromium-headless-shell
+
+      # 不设置 CHROMIUM_PATH，用上一步装好的默认浏览器。
+      - name: 运行前端回归
+        working-directory: tests/frontend
+        run: npm test

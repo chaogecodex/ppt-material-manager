@@ -59,6 +59,23 @@ const seedProject = (page) =>
       schemaVersion: 2, projectId: "p1", projectToken: "ptok", materials: [], currentStep: 1,
     })));
 
+// ---------------------------------------------------------------------- 等待
+// 一律等"条件成立"，不等固定时长。固定 sleep 有两个毛病：跑得慢，
+// 而且 runner 一负载就可能没睡够 → 偶发红灯。
+//
+// until: 轮询页面内的判定函数，条件一成立立刻返回。
+// 超时留 10s 是给"真的坏了"用的——正常路径根本碰不到。
+const until = (page, fn, arg) => page.waitForFunction(fn, arg, { timeout: 10000 });
+
+// settle: 等应用把手头的请求跑完。所有接口都被 route 拦了，
+// 所以 networkidle 在这里能精确表示"启动/提交流程结束"。
+const settle = (page) => page.waitForLoadState("networkidle");
+
+const visible = (page, sel) => page.waitForSelector(sel, { state: "visible", timeout: 10000 });
+
+// 注意：page.click / textContent / innerHTML 自带 auto-wait，
+// 会等元素出现且可操作，所以纯粹为"等元素渲染出来"而写的 sleep 全部删掉了。
+
 // CI 里用 `npx playwright install chromium` 装的默认浏览器；
 // 本地若已有预装 Chromium，用 CHROMIUM_PATH 指过去即可，不必重复下载。
 const browser = await chromium.launch(
@@ -70,7 +87,10 @@ const browser = await chromium.launch(
   const page = await browser.newPage();
   await page.route(API + "/**", (r) => r.abort());
   await page.goto(PAGE);
-  await page.waitForTimeout(1800);
+  // 这条断言的是"什么都别发生"，没有可等的正向条件，
+  // 只能等启动流程走完（门禁露出 = 启动的终态）再看有没有被滚走。
+  await settle(page);
+  await visible(page, "#accessGate");
   const y = await page.evaluate(() => Math.round(window.scrollY));
   ok("A1 首屏不自动滚动", y === 0, `scrollY=${y}`);
   await page.close();
@@ -82,9 +102,10 @@ const browser = await chromium.launch(
   await seedSession(page);
   await page.route(API + "/**", (r) => r.abort());
   await page.goto(PAGE);
-  await page.waitForTimeout(1200);
+  await settle(page);
   await page.click("#loadDemoBtn");
-  await page.waitForTimeout(1500);
+  // 直接等断言要看的那句提示出现
+  await until(page, () => /网络连接失败/.test(document.querySelector("#busyNoteText")?.textContent || ""));
   const text = (await page.textContent("#busyNoteText")) || "";
   ok("A2a 不暴露 Failed to fetch", !/Failed to fetch/i.test(text), JSON.stringify(text));
   ok("A2b 显示中文网络提示", /网络连接失败/.test(text) && (await page.isVisible("#busyNote")));
@@ -103,7 +124,8 @@ const browser = await chromium.launch(
     })));
   await page.route(API + "/**", (r) => r.abort());
   await page.goto(PAGE);
-  await page.waitForTimeout(1800);
+  // 迁移写回 schemaVersion=2 就是迁移完成的精确信号
+  await until(page, () => JSON.parse(localStorage.getItem("pptAgentMvp") || "{}").schemaVersion === 2);
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("pptAgentMvp")));
   ok("A3a 保留项目要求", (await page.inputValue("#purposeInput")) === "旧的项目要求");
   ok("A3b 清除无法补传的幽灵素材", (await page.textContent("#materialCount")) === "0");
@@ -132,9 +154,9 @@ const browser = await chromium.launch(
     return json(route, { success: true, project: project(hostile) });
   });
   await page.goto(PAGE);
-  await page.waitForTimeout(1000);
+  await settle(page);
   await page.click("#loadDemoBtn");
-  await page.waitForTimeout(1500);
+  await until(page, () => document.querySelectorAll("#materialList .file-icon").length === 2);
 
   const injected = await page.evaluate(() => document.querySelectorAll("#materialList img, #materialList b > b").length);
   ok("B1a 恶意 type/size 未注入 DOM 节点", injected === 0, `injected=${injected}`);
@@ -142,9 +164,8 @@ const browser = await chromium.launch(
   ok("B1c 未触发 alert", !alerted);
 
   await page.click('[data-next="2"]');
-  await page.waitForTimeout(500);
   await page.click('[data-next="3"]');
-  await page.waitForTimeout(1800);
+  await until(page, () => document.querySelectorAll("#suggestionList li").length === 2);
   const html = await page.innerHTML("#suggestionList");
   ok("C2a 建议区显示", await page.isVisible("#suggestionBox"));
   ok("C2b 渲染两条建议", (await page.evaluate(() => document.querySelectorAll("#suggestionList li").length)) === 2);
@@ -164,7 +185,7 @@ const browser = await chromium.launch(
     return json(route, { success: true, project: project(MATERIALS) });
   });
   await page.goto(PAGE);
-  await page.waitForTimeout(1800);
+  await until(page, () => document.querySelector("#accessGate")?.hidden === true);
   ok("登录态 门禁隐藏", (await page.evaluate(() => document.querySelector("#accessGate").hidden)) === true);
   ok("登录态 退出按钮可见（accessToken 已恢复）", await page.isVisible("#logoutBtn"));
   await page.close();
@@ -194,19 +215,23 @@ const browser = await chromium.launch(
     return json(route, { success: true, project: project(MATERIALS, AI_RESULT) });
   });
   await page.goto(PAGE);
-  await page.waitForTimeout(1200);
+  await settle(page);
 
   await page.click('[data-next="2"]');
-  await page.waitForTimeout(400);
   await page.click('[data-next="3"]');
-  await page.waitForTimeout(1500);
+  const outlineRendered = () =>
+    until(page, () => document.querySelector("#outline")?.innerHTML.includes("旧章节XYZ"));
+  await outlineRendered();
   ok("前置 大纲已渲染", (await page.innerHTML("#outline")).includes("旧章节XYZ"));
 
   // 删除素材后旧大纲必须立即消失
   await page.click('.step[data-step="1"]');
-  await page.waitForTimeout(500);
   await page.click("[data-remove]");
-  await page.waitForTimeout(1200);
+  // 三条断言的终态一起等：大纲清空 + 建议区隐藏 + 概览重置
+  await until(page, () =>
+    !document.querySelector("#outline")?.innerHTML.includes("旧章节XYZ") &&
+    document.querySelector("#suggestionBox")?.hidden === true &&
+    document.querySelector("#pageEstimate")?.textContent === "—");
   ok("删除后 大纲已清空", !(await page.innerHTML("#outline")).includes("旧章节XYZ"));
   ok("删除后 建议区已隐藏", (await page.evaluate(() => document.querySelector("#suggestionBox").hidden)) === true);
   ok("删除后 概览已重置", (await page.textContent("#pageEstimate")) === "—");
@@ -214,21 +239,23 @@ const browser = await chromium.launch(
   // 重新生成一版大纲作为"旧结果"。
   // 注意：改权重是必要的——不改的话 goStep(3) 会直接复用缓存的 aiResult，
   // 根本不会发起请求，也就测不到失败路径。
+  // 三种走法（成功 / analyze 失败 / 保存失败）终态各不相同，
+  // 所以这里只等"请求跑完"，具体断言由各调用点自己等。
   const dirtyThenGoToStep3 = async () => {
     await page.click('.step[data-step="2"]');
-    await page.waitForTimeout(400);
     await page.click('[data-weight="参考"]');
-    await page.waitForTimeout(300);
     await page.click('[data-next="3"]');
-    await page.waitForTimeout(1800);
+    await settle(page);
   };
 
   await dirtyThenGoToStep3();
+  await outlineRendered();
   ok("前置 重新分析后大纲再次渲染", (await page.innerHTML("#outline")).includes("旧章节XYZ"));
 
   // 分析请求失败后不得残留旧结果
   await page.evaluate(() => window.__setAnalyzeFail(true));
   await dirtyThenGoToStep3();
+  await visible(page, "#busyRetryBtn");
   ok("分析失败后 无残留旧大纲", !(await page.innerHTML("#outline")).includes("旧章节XYZ"),
      (await page.innerHTML("#outline")).slice(0, 50));
   ok("分析失败后 提示可见", await page.isVisible("#busyNote"));
@@ -238,9 +265,11 @@ const browser = await chromium.launch(
   // 这是 resetOutlineView() 必须放在 saveProject() 之前的原因。
   await page.evaluate(() => window.__setAnalyzeFail(false));
   await dirtyThenGoToStep3();
+  await outlineRendered();
   ok("前置 恢复后大纲再次渲染", (await page.innerHTML("#outline")).includes("旧章节XYZ"));
   await page.evaluate(() => window.__setSaveFail(true));
   await dirtyThenGoToStep3();
+  await until(page, () => !document.querySelector("#outline")?.innerHTML.includes("旧章节XYZ"));
   ok("保存阶段失败后 无残留旧大纲", !(await page.innerHTML("#outline")).includes("旧章节XYZ"),
      (await page.innerHTML("#outline")).slice(0, 50));
   await page.close();
@@ -258,7 +287,7 @@ const browser = await chromium.launch(
     return route.abort();
   });
   await page.goto(PAGE);
-  await page.waitForTimeout(2000);
+  await visible(page, "#busyRetryBtn");
   const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("pptAgentMvp")));
   ok("恢复失败 网络故障保留 projectId", kept?.projectId === "p1", String(kept?.projectId));
   ok("恢复失败 网络故障保留 projectToken", kept?.projectToken === "ptok");
@@ -276,7 +305,7 @@ const browser = await chromium.launch(
     return json(route, { detail: "服务异常" }, 503);
   });
   await page.goto(PAGE);
-  await page.waitForTimeout(2000);
+  await visible(page, "#busyRetryBtn");
   const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("pptAgentMvp")));
   ok("恢复失败 5xx 保留项目引用", kept?.projectId === "p1", String(kept?.projectId));
   await page.close();
@@ -292,7 +321,7 @@ const browser = await chromium.launch(
     return json(route, { detail: "项目不存在" }, 404);
   });
   await page.goto(PAGE);
-  await page.waitForTimeout(2000);
+  await until(page, () => !JSON.parse(localStorage.getItem("pptAgentMvp") || "{}").projectId);
   const cleared = await page.evaluate(() => JSON.parse(localStorage.getItem("pptAgentMvp")));
   ok("恢复失败 404 清除失效项目引用", !cleared?.projectId, String(cleared?.projectId));
   await page.close();

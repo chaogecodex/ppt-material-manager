@@ -7,12 +7,19 @@
 
 ```bash
 cd tests/frontend
-npm install
+npm ci
 npx playwright install chromium   # 首次运行需要
 npm test
 ```
 
-全部通过时退出码为 0，任一用例失败退出码为 1，可直接接入 CI。
+若本机已有预装 Chromium，可跳过下载：
+
+```bash
+CHROMIUM_PATH=/path/to/chromium npm test
+```
+
+全部通过时退出码为 0，任一用例失败退出码为 1。
+CI 中由 `.github/workflows/ci.yml` 的「前端回归」任务自动运行。
 
 ## 覆盖范围
 
