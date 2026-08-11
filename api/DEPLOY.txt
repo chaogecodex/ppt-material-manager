@@ -1,0 +1,11 @@
+PPT资料管家 CloudBase 后端部署包 v0.6
+
+- Dockerfile 已放在压缩包根目录
+- 服务监听端口：80
+- API Key 不在代码中
+- 初次部署可先不填环境变量；后续在 CloudBase 环境变量里配置
+- ZHIPU_API_KEY 仅放服务器端
+- 邀请码仅保存 PBKDF2 哈希，不保存明文；可用 INVITE_CODES_JSON 覆盖
+- INVITE_EXPIRES_AT 控制所有邀请码的统一到期时间（ISO 8601）
+- ACCESS_AUTH_SECRET 可选；未设置时从现有服务器密钥单向派生
+- ACCESS_SESSION_SECONDS 默认 2592000 秒（30 天），且会话不会越过邀请码到期时间

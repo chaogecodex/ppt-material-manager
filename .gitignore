@@ -1,0 +1,5 @@
+cloudbaserc.json
+api/.venv/
+api/__pycache__/
+api/tests/__pycache__/
+*.py[cod]
