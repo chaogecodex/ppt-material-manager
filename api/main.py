@@ -51,6 +51,9 @@ MAX_PROJECT_BYTES = int(os.getenv("MAX_PROJECT_BYTES", str(300 * 1024 * 1024)))
 MAX_TEXT_CHARS_PER_FILE = int(os.getenv("MAX_TEXT_CHARS_PER_FILE", "70000"))
 MAX_TOTAL_SUMMARY_CHARS = int(os.getenv("MAX_TOTAL_SUMMARY_CHARS", "140000"))
 AI_MAX_ATTEMPTS = max(1, int(os.getenv("AI_MAX_ATTEMPTS", "4")))
+# 分析在后台跑，状态落盘。若容器在分析途中重启，状态会永久停在 running——
+# 超过这个秒数仍是 running 即判定为中断，允许重新发起。
+ANALYSIS_STALE_SECONDS = int(os.getenv("ANALYSIS_STALE_SECONDS", "900"))
 
 DEFAULT_INVITE_CODES_JSON = '{"invite01":"pbkdf2_sha256$210000$3TZnASM5ZDfKGwZRn3bEwg$LtS8Q6q4EJQmpyLY_8TVuEXJR2jIJq9TC4lWzpnv-NI","invite02":"pbkdf2_sha256$210000$nMIVlwrwMy3zIIaFR7Thyw$YpESb3zBNQoGCZR99OSjtd9NW0IS0NEJob5nbDXS5Zo","invite03":"pbkdf2_sha256$210000$s36EpIKco3LXaOmzpkyFtQ$Z8dYKHA0Q8jo5EtZ3rTuwEcLE5M5wZWQSX9z6Md7LyQ","invite04":"pbkdf2_sha256$210000$B3WdWT0RABMsrwum9sOaqw$D8N46G7EwPMRlvGqqPNXQwTioScMY_ESwpCaK2Mm334","invite05":"pbkdf2_sha256$210000$HwY9BB82qnxAwpT9HRQdBQ$3AGOZ-mBsOF9Fe55VH1Pkg3x3Ors-RUr_1bGWruur0s","invite06":"pbkdf2_sha256$210000$7UqIHeL5Vc_KixybigFv6w$AZBRYOGIrUKKqDpVGBvte5XrvLdgg62FrxZ9Wt6oFVY","invite07":"pbkdf2_sha256$210000$V8X5AWh8qgKQq-zn2DOmxg$gLBd7kuvbvtZiDGQX-zwXlFdZKVRXypfIFnMfp72VGk","invite08":"pbkdf2_sha256$210000$z6djPNt17WtuD-bm33hUtw$eDI5HWdjukVBw7jEylYK_DMmJst_wPDOu64s8QT01H0","invite09":"pbkdf2_sha256$210000$n8nas4hGIAbjzrSbcIhXew$vH3X2zG6zGAT1MCawFMHUHlXjWDOgCUr-T0aSZG9o9Q","invite10":"pbkdf2_sha256$210000$6XRC1ovJYBdUjKsjX3NUgw$OYxFjVGQYhMhkZAYXHT6vNN8anADSwFDtjEwyc7z-RQ"}'
 INVITE_CODES_JSON = os.getenv("INVITE_CODES_JSON", DEFAULT_INVITE_CODES_JSON)
@@ -343,6 +346,10 @@ def build_storage() -> Storage:
 
 storage = build_storage()
 project_locks: Dict[str, asyncio.Lock] = {}
+# 正在跑的分析任务。服务是单 worker（见 Dockerfile 的 --workers 1），
+# 所以这张表就是"此刻是否真的在分析"的权威依据；落盘的 analysisStatus
+# 是给客户端轮询用的，进程重启后会残留 running，不能用来做重复提交判断。
+analysis_tasks: Dict[str, "asyncio.Task[None]"] = {}
 
 
 def get_lock(project_id: str) -> asyncio.Lock:
@@ -389,6 +396,27 @@ def require_project(project_id: str, token: Optional[str]) -> Dict[str, Any]:
     if not verify_token_hash(token or "", project.get("accessTokenHash", "")):
         raise HTTPException(status_code=401, detail="项目访问凭证无效")
     return project
+
+
+def analysis_is_stale(project: Dict[str, Any]) -> bool:
+    """running 状态是否已经不可信（进程在分析途中没了）。
+
+    只有 running 才谈得上过期；done/failed 是终态。
+    时间戳缺失或解析不了，一律当过期处理——宁可允许用户重试，
+    也不要把项目永久锁在一个不会自己结束的状态里。
+    """
+    if project.get("analysisStatus") != "running":
+        return False
+    started = project.get("analysisStartedAt")
+    if not started:
+        return True
+    try:
+        started_at = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - started_at).total_seconds() > ANALYSIS_STALE_SECONDS
 
 
 # -----------------------------
@@ -1027,21 +1055,21 @@ async def get_project_file(
     })
 
 
-@app.post("/projects/{project_id}/analyze")
-async def analyze_project(
-    project_id: str,
-    x_project_token: Optional[str] = Header(default=None),
-):
-    require_ai_key()
-    async with get_lock(project_id):
-        project = require_project(project_id, x_project_token)
-        materials = sorted(project.get("materials", []), key=lambda m: m.get("customerOrder", 999))
-        if not materials:
-            raise HTTPException(status_code=400, detail="请先上传素材")
+async def run_analysis(project_id: str, materials: List[Dict[str, Any]]) -> None:
+    """后台执行分析，结果一律落盘。
 
-        project["analysisStatus"] = "running"
-        project["analysisStartedAt"] = now_iso()
-        save_project(project)
+    进程内不保留权威状态：客户端读的是存储里的 analysisStatus，
+    所以即使这个任务所在的进程没了，前端也不会永远等一个内存里的 future。
+
+    这里全程持项目锁，挡住分析期间的 PATCH / 上传 / 删除——那些操作会重置
+    aiResult，与分析结果交错写入就会产生「大纲对不上素材」的脏状态。
+    代价是发起分析的接口不能再争这把锁（见 analyze_project 的说明）。
+    """
+    async with get_lock(project_id):
+        try:
+            project = load_project(project_id)
+        except HTTPException:
+            return  # 项目在分析期间被删了，直接收工
 
         try:
             analyses: List[Dict[str, Any]] = []
@@ -1052,13 +1080,92 @@ async def analyze_project(
             project["aiResult"] = result
             project["analysisStatus"] = "done"
             project["analysisCompletedAt"] = now_iso()
+            project.pop("analysisError", None)
             save_project(project)
-            return {"success": True, "result": result, "materials": analyses, "project": public_project(project)}
-        except HTTPException:
-            project["analysisStatus"] = "failed"
-            save_project(project)
-            raise
         except Exception as exc:
+            # 失败原因要留给用户看，所以写进项目而不是只抛出去——
+            # 此时早已没有 HTTP 响应可以承载它了。
+            detail = exc.detail if isinstance(exc, HTTPException) else f"分析失败：{str(exc)[:500]}"
             project["analysisStatus"] = "failed"
+            project["analysisCompletedAt"] = now_iso()
+            project["analysisError"] = str(detail)[:500]
             save_project(project)
-            raise HTTPException(status_code=500, detail=f"分析失败：{str(exc)[:500]}") from exc
+
+
+@app.post("/projects/{project_id}/analyze", status_code=202)
+async def analyze_project(
+    project_id: str,
+    x_project_token: Optional[str] = Header(default=None),
+):
+    """发起分析后立即返回，不再占着连接等 AI。
+
+    分析耗时可达数分钟，同步返回会撞上网关超时（线上实际出现过 504）。
+    客户端改为轮询 GET /projects/{id}/analyze。
+    """
+    require_ai_key()
+    # 刻意不持项目锁：run_analysis 全程持锁，这里一争锁就会等到那次分析结束，
+    # 等锁等到手时状态已经是 done，"是否在跑"的判断就永远失效了。
+    # 下面从校验到 create_task 之间没有 await，单 worker 事件循环里不会被插队。
+    project = require_project(project_id, x_project_token)
+    materials = sorted(project.get("materials", []), key=lambda m: m.get("customerOrder", 999))
+    if not materials:
+        raise HTTPException(status_code=400, detail="请先上传素材")
+
+    def running_payload(proj: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "success": True,
+            "analysisStatus": "running",
+            "startedAt": proj.get("analysisStartedAt"),
+            "project": public_project(proj),
+        }
+
+    # 重复提交（连点、刷新后重发）不该把同一批素材再打给 AI 一遍。
+    # 判断依据是进程内任务表而不是落盘状态：进程重启后落盘会残留 running，
+    # 那时并没有任务在跑，用户应当可以立刻重试，而不是干等到状态过期。
+    existing = analysis_tasks.get(project_id)
+    if existing is not None and not existing.done():
+        return running_payload(project)
+
+    project["analysisStatus"] = "running"
+    project["analysisStartedAt"] = now_iso()
+    project.pop("analysisCompletedAt", None)
+    project.pop("analysisError", None)
+    save_project(project)
+
+    task = asyncio.create_task(run_analysis(project_id, materials))
+    analysis_tasks[project_id] = task
+    task.add_done_callback(lambda _: analysis_tasks.pop(project_id, None))
+    return running_payload(project)
+
+
+@app.get("/projects/{project_id}/analyze")
+async def analyze_status(
+    project_id: str,
+    x_project_token: Optional[str] = Header(default=None),
+):
+    """轮询端点：只回状态与结果，不回整个项目。
+
+    刻意不加项目锁——分析任务全程持锁，这里一旦争锁，轮询就会被自己等的
+    那个分析卡住。这里只读，不写。
+    """
+    project = require_project(project_id, x_project_token)
+    status = project.get("analysisStatus", "idle")
+    error = project.get("analysisError")
+    if analysis_is_stale(project):
+        status = "failed"
+        error = "分析已中断，请重试"
+
+    payload: Dict[str, Any] = {
+        "success": True,
+        "analysisStatus": status,
+        "startedAt": project.get("analysisStartedAt"),
+        "completedAt": project.get("analysisCompletedAt"),
+    }
+    if status == "done":
+        # 带上 project，形状与旧的同步响应一致，客户端拿到结果后不必再多发一次请求
+        payload["result"] = project.get("aiResult")
+        payload["materials"] = project.get("aiMaterials", [])
+        payload["project"] = public_project(project)
+    elif status == "failed":
+        payload["error"] = error or "分析失败，请重试"
+    return payload

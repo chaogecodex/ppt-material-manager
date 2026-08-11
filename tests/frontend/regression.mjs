@@ -327,6 +327,127 @@ const browser = await chromium.launch(
   await page.close();
 }
 
+// ------------------------------------------ 分析异步化：202 受理 + 轮询出结果
+const fastPoll = (page) => page.addInitScript(() => { window.__analysisPollIntervalMs = 20; });
+
+// 走到第 3 步会触发分析
+const gotoStep3 = async (page) => {
+  await page.goto(PAGE);
+  await settle(page);
+  await page.click("#loadDemoBtn");
+  await until(page, () => document.querySelectorAll("#materialList .file-icon").length === 2);
+  await page.click('[data-next="2"]');
+  await page.click('[data-next="3"]');
+};
+
+{
+  const page = await browser.newPage();
+  await fastPoll(page);
+  await seedSession(page);
+  let statusPolls = 0;
+  await page.route(API + "/**", (route) => {
+    const req = route.request();
+    const p = req.url().split("tcloudbase.com")[1].split("?")[0];
+    const m = req.method();
+    if (p === "/auth/session") return json(route, { success: true, user: { username: "测试用户" } });
+    if (p === "/projects") return json(route, { success: true, project: project(), accessToken: "ptok" });
+    if (/\/files$/.test(p)) return json(route, { success: true, project: project(MATERIALS) });
+    if (/\/analyze$/.test(p) && m === "POST")
+      return json(route, { success: true, analysisStatus: "running", project: project(MATERIALS) }, 202);
+    if (/\/analyze$/.test(p) && m === "GET") {
+      statusPolls += 1;
+      if (statusPolls < 2) return json(route, { success: true, analysisStatus: "running" });
+      return json(route, {
+        success: true, analysisStatus: "done", result: AI_RESULT,
+        materials: [], project: project(MATERIALS, AI_RESULT),
+      });
+    }
+    return json(route, { success: true, project: project(MATERIALS) });
+  });
+  await gotoStep3(page);
+  await until(page, () => document.querySelector("#outline")?.innerHTML.includes("旧章节XYZ"));
+  ok("异步分析 202 受理后轮询出大纲", (await page.innerHTML("#outline")).includes("旧章节XYZ"));
+  ok("异步分析 确实轮询了状态端点", statusPolls >= 2, `polls=${statusPolls}`);
+  await page.close();
+}
+
+// 后台分析失败：不能残留旧大纲，且要能重试
+{
+  const page = await browser.newPage();
+  await fastPoll(page);
+  await seedSession(page);
+  await page.route(API + "/**", (route) => {
+    const req = route.request();
+    const p = req.url().split("tcloudbase.com")[1].split("?")[0];
+    const m = req.method();
+    if (p === "/auth/session") return json(route, { success: true, user: { username: "测试用户" } });
+    if (p === "/projects") return json(route, { success: true, project: project(), accessToken: "ptok" });
+    if (/\/files$/.test(p)) return json(route, { success: true, project: project(MATERIALS) });
+    if (/\/analyze$/.test(p) && m === "POST")
+      return json(route, { success: true, analysisStatus: "running", project: project(MATERIALS) }, 202);
+    if (/\/analyze$/.test(p) && m === "GET")
+      return json(route, { success: true, analysisStatus: "failed", error: "AI服务暂时不可用" });
+    return json(route, { success: true, project: project(MATERIALS) });
+  });
+  await gotoStep3(page);
+  await visible(page, "#busyRetryBtn");
+  ok("异步分析失败 无残留旧大纲", !(await page.innerHTML("#outline")).includes("旧章节XYZ"));
+  ok("异步分析失败 展示后端给的原因",
+     /AI服务暂时不可用/.test((await page.textContent("#busyNoteText")) || ""));
+  ok("异步分析失败 提供重试", await page.isVisible("#busyRetryBtn"));
+  await page.close();
+}
+
+// 兼容旧的同步后端：POST 直接带回 result 时不应再去轮询
+{
+  const page = await browser.newPage();
+  await fastPoll(page);
+  await seedSession(page);
+  let statusPolls = 0;
+  await page.route(API + "/**", (route) => {
+    const req = route.request();
+    const p = req.url().split("tcloudbase.com")[1].split("?")[0];
+    const m = req.method();
+    if (p === "/auth/session") return json(route, { success: true, user: { username: "测试用户" } });
+    if (p === "/projects") return json(route, { success: true, project: project(), accessToken: "ptok" });
+    if (/\/files$/.test(p)) return json(route, { success: true, project: project(MATERIALS) });
+    if (/\/analyze$/.test(p) && m === "GET") { statusPolls += 1; return json(route, { success: true, analysisStatus: "running" }); }
+    if (/\/analyze$/.test(p) && m === "POST")
+      return json(route, { success: true, result: AI_RESULT, materials: [], project: project(MATERIALS, AI_RESULT) });
+    return json(route, { success: true, project: project(MATERIALS) });
+  });
+  await gotoStep3(page);
+  await until(page, () => document.querySelector("#outline")?.innerHTML.includes("旧章节XYZ"));
+  ok("旧同步后端 直接渲染大纲", (await page.innerHTML("#outline")).includes("旧章节XYZ"));
+  ok("旧同步后端 不会去轮询", statusPolls === 0, `polls=${statusPolls}`);
+  await page.close();
+}
+
+// 刷新页面时后台分析仍在跑：应自动接上继续等，而不是把用户晾着
+{
+  const page = await browser.newPage();
+  await fastPoll(page);
+  await seedSession(page);
+  await seedProject(page);
+  await page.route(API + "/**", (route) => {
+    const req = route.request();
+    const p = req.url().split("tcloudbase.com")[1].split("?")[0];
+    const m = req.method();
+    if (p === "/auth/session") return json(route, { success: true, user: { username: "测试用户" } });
+    if (/\/analyze$/.test(p) && m === "GET")
+      return json(route, {
+        success: true, analysisStatus: "done", result: AI_RESULT,
+        materials: [], project: project(MATERIALS, AI_RESULT),
+      });
+    return json(route, { success: true, project: { ...project(MATERIALS), analysisStatus: "running" } });
+  });
+  await page.goto(PAGE);
+  // 用户什么都没点，仅靠恢复时发现 running 就该接上轮询
+  await until(page, () => document.querySelector("#outline")?.innerHTML.includes("旧章节XYZ"));
+  ok("刷新后 自动接续后台分析并渲染结果", (await page.innerHTML("#outline")).includes("旧章节XYZ"));
+  await page.close();
+}
+
 await browser.close();
 
 console.log(`通过 ${pass.length}:`);
