@@ -1587,7 +1587,11 @@ function renderMaterials() {
       { method: "DELETE" }
     );
     applyProject(result.project);
+    // 删除接口会清空 aiResult 并把 analysisStatus 置回 idle，
+    // 但第 3 步的大纲 DOM 不会自己消失，必须显式清掉，
+    // 否则重新分析期间、或分析失败后，用户仍会看到已失效的旧大纲。
     state.dirty = true;
+    resetOutlineView();
     renderMaterials();
     saveState();
   }));
@@ -1708,6 +1712,9 @@ function renderAiOutline(result) {
 
 async function analyzeProject() {
   await saveProject(false);
+  // 同理：改权重、调顺序、补媒体都会触发重新分析。
+  // 先清空旧大纲，避免分析期间和失败后残留上一版结果。
+  resetOutlineView();
   showBusyNote("AI正在解析资料并生成编排，资料较多时可能需要几分钟，请不要关闭页面…");
   const result = await apiRequest(`/projects/${encodeURIComponent(state.projectId)}/analyze`, {
     method: "POST",
