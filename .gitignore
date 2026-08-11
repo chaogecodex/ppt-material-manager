@@ -5,4 +5,3 @@ api/tests/__pycache__/
 *.py[cod]
 
 node_modules/
-tests/frontend/package-lock.json
