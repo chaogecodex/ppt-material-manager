@@ -1711,10 +1711,10 @@ function renderAiOutline(result) {
 }
 
 async function analyzeProject() {
-  await saveProject(false);
-  // 同理：改权重、调顺序、补媒体都会触发重新分析。
-  // 先清空旧大纲，避免分析期间和失败后残留上一版结果。
+  // 必须放在 saveProject 之前：用户一旦触发重新分析，旧大纲就已经不可信，
+  // 无论保存请求成功与否都应先清除。放在之后的话，保存阶段失败会让旧大纲残留。
   resetOutlineView();
+  await saveProject(false);
   showBusyNote("AI正在解析资料并生成编排，资料较多时可能需要几分钟，请不要关闭页面…");
   const result = await apiRequest(`/projects/${encodeURIComponent(state.projectId)}/analyze`, {
     method: "POST",
@@ -1981,14 +1981,26 @@ async function initialize() {
       toast("云端项目已恢复");
     } catch (error) {
       console.error("云端项目恢复失败", error);
-      state.materials = [];
-      state.projectId = "";
-      state.projectToken = "";
-      state.aiResult = null;
-      state.currentStep = 1;
-      saveState();
-      toast("项目恢复失败，请重新上传资料");
-      if (!hasSession) showAccessGate();
+      // 只有服务端明确说这个项目不可用时才丢弃本地引用。
+      // 网络中断或 5xx 属于临时故障，清掉 projectId/projectToken 会让用户
+      // 永久失去云端项目的入口——项目还在，只是再也找不回来了。
+      const gone = error?.status === 401 || error?.status === 403 || error?.status === 404;
+      if (gone) {
+        state.materials = [];
+        state.projectId = "";
+        state.projectToken = "";
+        state.aiResult = null;
+        state.currentStep = 1;
+        saveState();
+        toast("项目已失效，请重新上传资料");
+        if (!hasSession) showAccessGate();
+      } else {
+        showBusyError(error?.message || "项目恢复失败，请稍后重试", () => runAction(async () => {
+          await restoreRemoteProject();
+          renderMaterials();
+          toast("云端项目已恢复");
+        }, { label: "正在恢复云端项目…" }));
+      }
     }
   } else if (!hasSession) {
     showAccessGate();

@@ -1,0 +1,11 @@
+{
+  "name": "ppt-material-manager-frontend-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node regression.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}
