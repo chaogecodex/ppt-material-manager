@@ -61,15 +61,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: pw-${{ runner.os }}-${{ hashFiles('tests/frontend/package-lock.json') }}
+          key: pw-shell-${{ runner.os }}-${{ hashFiles('tests/frontend/package-lock.json') }}
 
-      # 刻意不加 --with-deps：那一步要 19 秒，装的基本是字体包，
-      # 而 ubuntu-latest 镜像已自带 Chromium 需要的系统库。
-      # 这些用例只断言 textContent，不截图不录像，字体渲染与结果无关。
+      # 只装 headless shell（114MB），不装完整 chromium。
+      # chromium.launch() 无头模式跑的就是 headless shell——装 chromium 会连
+      # 完整 Chrome(184MB) 和 FFmpeg 一起拖下来，而这两个从没被启动过。
+      #
+      # 另外刻意不加 --with-deps：那一步要 19 秒且装的基本是字体包，
+      # 而 ubuntu-latest 镜像已自带所需系统库。这些用例只断言 textContent，
+      # 不截图不录像，字体渲染与结果无关。
       - name: 安装 Chromium
         if: steps.pw-cache.outputs.cache-hit != 'true'
         working-directory: tests/frontend
-        run: npx playwright install chromium
+        run: npx playwright install chromium-headless-shell
 
       # 不设置 CHROMIUM_PATH，用上一步装好的默认浏览器。
       - name: 运行前端回归
