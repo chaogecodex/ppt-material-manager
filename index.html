@@ -793,6 +793,67 @@ footer {
 .topbar-actions { display: flex; align-items: center; gap: 8px; }
 .account-btn { color: var(--muted); }
 
+.suggestion-box {
+  margin-top: 18px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--accent-soft);
+}
+.suggestion-box[hidden] { display: none; }
+.suggestion-box b { font-size: 15px; }
+.suggestion-box p { margin: 6px 0 12px; color: var(--muted); font-size: 12px; }
+.suggestion-box ol { margin: 0; padding-left: 20px; color: var(--text); }
+.suggestion-box li { margin-bottom: 6px; font-size: 14px; line-height: 1.7; }
+.suggestion-box li:last-child { margin-bottom: 0; }
+
+.busy-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  z-index: 40;
+  display: none;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background-size: 42% 100%;
+  background-repeat: no-repeat;
+  animation: busy-slide 1.15s linear infinite;
+}
+body[aria-busy="true"] .busy-bar { display: block; }
+@keyframes busy-slide {
+  from { background-position: -42% 0; }
+  to { background-position: 142% 0; }
+}
+
+body[aria-busy="true"] .panel button,
+body[aria-busy="true"] .steps button { opacity: .5; cursor: progress; }
+
+.busy-note {
+  position: fixed;
+  left: 50%;
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 30px);
+  padding: 11px 10px 11px 16px;
+  border-radius: 12px;
+  color: white;
+  background: var(--dark);
+  box-shadow: 0 12px 34px rgba(0,0,0,.22);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.busy-note[hidden] { display: none; }
+.busy-note .text-btn { color: #b7bbff; min-height: 32px; flex: 0 0 auto; }
+.busy-note.error { background: #7a271a; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .busy-bar { animation: none; background: var(--accent); }
+}
+
 @media (max-width: 900px) {
   .access-gate { grid-template-columns: 1fr; }
   .access-intro { min-height: 38vh; border-right: 0; border-bottom: 1px solid rgba(255,255,255,.1); }
@@ -972,10 +1033,10 @@ footer {
           </div>
 
           <label class="dropzone" id="dropzone">
-            <input id="fileInput" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.png,.jpg,.jpeg,.webp,.mp4,.mov,.m4v,.mp3,.wav" />
+            <input id="fileInput" type="file" multiple accept=".pdf,.docx,.xlsx,.xlsm,.pptx,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.mp4,.mov,.m4v,.mp3,.wav,.m4a" />
             <span class="drop-icon">＋</span>
             <strong>点击或拖入文件</strong>
-            <small>支持文档、表格、PPT、照片、视频和音频</small>
+            <small>可解析：PDF、Word、Excel、PPT、文本、CSV、照片<br />可上传占位：视频与音频（暂不解析内容）</small>
           </label>
 
           <div class="project-brief">
@@ -1057,6 +1118,12 @@ footer {
 
           <div class="outline" id="outline"></div>
 
+          <section class="suggestion-box" id="suggestionBox" aria-label="AI顺序建议" hidden>
+            <b>AI顺序建议</b>
+            <p>仅供参考，不会自动改变客户确认的素材顺序。</p>
+            <ol id="suggestionList"></ol>
+          </section>
+
           <div class="add-media-card">
             <div>
               <b>还需要补充照片、视频或Logo？</b>
@@ -1064,7 +1131,7 @@ footer {
             </div>
             <label class="secondary-btn upload-inline">
               补充媒体
-              <input id="extraMediaInput" type="file" multiple accept="image/*,video/*" />
+              <input id="extraMediaInput" type="file" multiple accept=".png,.jpg,.jpeg,.webp,.mp4,.mov,.m4v" />
             </label>
           </div>
 
@@ -1108,6 +1175,12 @@ footer {
     </footer>
   </div>
 
+  <div class="busy-bar" id="busyBar" aria-hidden="true"></div>
+  <div class="busy-note" id="busyNote" role="status" aria-live="polite" hidden>
+    <span id="busyNoteText"></span>
+    <button class="text-btn" id="busyRetryBtn" type="button" hidden>重试</button>
+    <button class="text-btn" id="busyDismissBtn" type="button" hidden>关闭</button>
+  </div>
   <div class="toast" id="toast" role="status"></div>
   <script>
 
@@ -1115,6 +1188,9 @@ const PUBLIC_SHARE_URL = "https://ppt-material-manager-ppt-ai-d8gx2g506c70eb54e.
 const API_BASE_URL = "https://ppt-ai-api-294833-10-1466238220.sh.run.tcloudbase.com";
 const LOCAL_STATE_KEY = "pptAgentMvp";
 const ACCESS_SESSION_KEY = "pptAccessSession";
+// 本地状态结构版本。旧版存过纯本地演示数据（素材只有元数据、没有云端项目），
+// 那些素材无法迁移到 CloudBase，恢复时必须丢弃，只保留客户填写的项目要求。
+const SCHEMA_VERSION = 2;
 
 const state = {
   materials: [],
@@ -1122,7 +1198,6 @@ const state = {
   projectId: "",
   projectToken: "",
   aiResult: null,
-  demoMode: false,
   dirty: false,
   busy: false,
   accessToken: "",
@@ -1151,34 +1226,47 @@ function toast(message) {
   window.__toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
 }
 
-function fileType(name, mime = "") {
-  const ext = (name.split(".").pop() || "").toUpperCase();
-  if (mime.startsWith("image/")) return "IMG";
-  if (mime.startsWith("video/")) return "VIDEO";
-  if (mime.startsWith("audio/")) return "AUDIO";
-  return ext.slice(0, 6) || "FILE";
+// localStorage 在配额耗尽或 Safari 隐私模式下会抛异常，不能让它打断业务流程。
+let storageWarned = false;
+function safeStorageSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    console.error("本地状态保存失败", error);
+    if (!storageWarned) {
+      storageWarned = true;
+      toast("浏览器存储空间不足，本次进度无法在本地保留");
+    }
+    return false;
+  }
 }
 
-function fileSize(bytes) {
-  if (!bytes) return "—";
-  const units = ["B", "KB", "MB", "GB"];
-  let value = bytes;
-  let index = 0;
-  while (value >= 1024 && index < units.length - 1) {
-    value /= 1024;
-    index++;
+function safeStorageRemove(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch (error) {
+    console.error("本地状态清除失败", error);
   }
-  return `${value.toFixed(index ? 1 : 0)} ${units[index]}`;
+}
+
+function safeStorageGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (error) {
+    console.error("本地状态读取失败", error);
+    return null;
+  }
 }
 
 function saveState() {
-  localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify({
+  safeStorageSet(LOCAL_STATE_KEY, JSON.stringify({
+    schemaVersion: SCHEMA_VERSION,
     materials: state.materials,
     currentStep: state.currentStep,
     projectId: state.projectId,
     projectToken: state.projectToken,
     aiResult: state.aiResult,
-    demoMode: state.demoMode,
     purpose: $("#purposeInput")?.value || "",
     audience: $("#audienceInput")?.value || "",
     limit: $("#limitInput")?.value || "",
@@ -1186,24 +1274,47 @@ function saveState() {
   }));
 }
 
+// 返回 true 表示清理过旧版演示数据，调用方据此提示一次。
 function restoreLocalState() {
+  let saved = null;
   try {
-    const saved = JSON.parse(localStorage.getItem(LOCAL_STATE_KEY) || "null");
-    if (!saved) return;
-    state.materials = saved.materials || [];
-    state.currentStep = Number(saved.currentStep) || 1;
-    state.projectId = saved.projectId || "";
-    state.projectToken = saved.projectToken || "";
-    state.aiResult = saved.aiResult || null;
-    state.demoMode = Boolean(saved.demoMode || (!saved.projectId && state.materials.length));
-    $("#purposeInput").value = saved.purpose || "";
-    $("#audienceInput").value = saved.audience || "";
-    $("#limitInput").value = saved.limit || "";
-    $("#instructionInput").value = saved.instruction || "";
+    saved = JSON.parse(safeStorageGet(LOCAL_STATE_KEY) || "null");
   } catch (error) {
     console.error("本地项目状态读取失败", error);
-    localStorage.removeItem(LOCAL_STATE_KEY);
+    safeStorageRemove(LOCAL_STATE_KEY);
+    return false;
   }
+  if (!saved) return false;
+
+  // 项目要求是客户手输的，任何情况下都保留。
+  $("#purposeInput").value = saved.purpose || "";
+  $("#audienceInput").value = saved.audience || "";
+  $("#limitInput").value = saved.limit || "";
+  $("#instructionInput").value = saved.instruction || "";
+
+  const savedMaterials = Array.isArray(saved.materials) ? saved.materials : [];
+  const hasCloudProject = Boolean(saved.projectId && saved.projectToken);
+  const isLegacyDemo = Number(saved.schemaVersion) !== SCHEMA_VERSION
+    && !hasCloudProject
+    && (saved.demoMode === true || savedMaterials.length > 0);
+
+  if (isLegacyDemo) {
+    // 旧版只存了素材元数据，没有原始文件，无法补传到云端；留着会变成打不开的幽灵素材。
+    state.materials = [];
+    state.projectId = "";
+    state.projectToken = "";
+    state.aiResult = null;
+    state.currentStep = 1;
+    saveState();
+    return true;
+  }
+
+  state.materials = savedMaterials;
+  state.currentStep = Number(saved.currentStep) || 1;
+  state.projectId = saved.projectId || "";
+  state.projectToken = saved.projectToken || "";
+  state.aiResult = saved.aiResult || null;
+  return false;
 }
 
 function briefPayload() {
@@ -1218,28 +1329,28 @@ function briefPayload() {
 
 function readAccessSession() {
   try {
-    const session = JSON.parse(localStorage.getItem(ACCESS_SESSION_KEY) || "null");
+    const session = JSON.parse(safeStorageGet(ACCESS_SESSION_KEY) || "null");
     if (!session?.token || !session?.username || !session?.expiresAt) return null;
     if (Date.parse(session.expiresAt) <= Date.now()) {
-      localStorage.removeItem(ACCESS_SESSION_KEY);
+      safeStorageRemove(ACCESS_SESSION_KEY);
       return null;
     }
     return session;
   } catch (error) {
     console.error("登录状态读取失败", error);
-    localStorage.removeItem(ACCESS_SESSION_KEY);
+    safeStorageRemove(ACCESS_SESSION_KEY);
     return null;
   }
 }
 
 function saveAccessSession(session) {
-  localStorage.setItem(ACCESS_SESSION_KEY, JSON.stringify(session));
+  safeStorageSet(ACCESS_SESSION_KEY, JSON.stringify(session));
 }
 
 function clearAccessSession() {
   state.accessToken = "";
   state.accessUser = "";
-  localStorage.removeItem(ACCESS_SESSION_KEY);
+  safeStorageRemove(ACCESS_SESSION_KEY);
   $("#logoutBtn").hidden = true;
 }
 
@@ -1269,8 +1380,14 @@ async function restoreAccessSession() {
     hideAccessGate();
     return true;
   } catch (error) {
-    clearAccessSession();
-    return false;
+    // 只有服务端明确说凭证无效才清除；网络抖动或服务临时不可用不应该把人踢下线。
+    if (error?.status === 401 || error?.status === 403) {
+      clearAccessSession();
+      return false;
+    }
+    console.warn("登录状态校验暂不可用，沿用本地会话", error);
+    hideAccessGate();
+    return true;
   }
 }
 
@@ -1296,13 +1413,41 @@ async function apiRequest(path, options = {}) {
   if (state.projectToken) headers.set("X-Project-Token", state.projectToken);
   if (state.accessToken) headers.set("Authorization", `Bearer ${state.accessToken}`);
 
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  } catch (cause) {
+    // fetch 只在网络层失败时 reject，原始信息是 "Failed to fetch" 这类英文，不能直接给用户看。
+    const error = new Error("网络连接失败，请检查网络后重试");
+    error.status = 0;
+    error.retryable = true;
+    error.cause = cause;
+    throw error;
+  }
+
   const contentType = response.headers.get("content-type") || "";
-  const payload = contentType.includes("application/json") ? await response.json() : null;
+  let payload = null;
+  if (contentType.includes("application/json")) {
+    try {
+      payload = await response.json();
+    } catch (cause) {
+      console.error("响应解析失败", cause);
+    }
+  }
+
   if (!response.ok) {
-    const message = payload?.detail || payload?.message || `请求失败（${response.status}）`;
+    let message = payload?.detail || payload?.message;
+    if (!message) {
+      if (response.status === 401 || response.status === 403) message = "登录已失效，请重新登录";
+      else if (response.status === 413) message = "文件超出大小限制，请压缩后再上传";
+      else if (response.status === 429) message = "操作过于频繁，请稍后再试";
+      else if (response.status === 504) message = "AI解析超时，资料较多时请稍后重试";
+      else if (response.status >= 500) message = `服务暂时不可用（${response.status}），请稍后重试`;
+      else message = `请求失败（${response.status}）`;
+    }
     const error = new Error(message);
     error.status = response.status;
+    error.retryable = response.status >= 500 || response.status === 429;
     throw error;
   }
   return payload;
@@ -1336,7 +1481,6 @@ async function createProject() {
   }
   state.projectId = result.project.id;
   state.projectToken = result.accessToken;
-  state.demoMode = false;
   applyProject(result.project);
   saveState();
 }
@@ -1345,13 +1489,12 @@ async function restoreRemoteProject() {
   if (!state.projectId || !state.projectToken) return;
   const result = await apiRequest(`/projects/${encodeURIComponent(state.projectId)}`);
   applyProject(result.project);
-  state.demoMode = false;
   state.dirty = false;
   saveState();
 }
 
 async function saveProject(locked) {
-  if (state.demoMode || !state.projectId) return;
+  if (!state.projectId) return;
   const brief = briefPayload();
   const body = {
     title: brief.title,
@@ -1382,13 +1525,6 @@ async function addFiles(fileList) {
   const files = [...fileList];
   if (!files.length) return;
 
-  if (state.demoMode) {
-    state.materials = [];
-    state.projectId = "";
-    state.projectToken = "";
-    state.aiResult = null;
-    state.demoMode = false;
-  }
   if (!state.projectId) await createProject();
 
   const form = new FormData();
@@ -1409,9 +1545,9 @@ async function loadDemo() {
   state.projectId = "";
   state.projectToken = "";
   state.aiResult = null;
-  state.demoMode = false;
   state.dirty = false;
   state.currentStep = 1;
+  resetOutlineView();
   $("#purposeInput").value = "向管理层汇报危险废物管理与项目进展";
   $("#audienceInput").value = "管理层与相关业务部门";
   $("#limitInput").value = "15—18页 / 20分钟";
@@ -1435,27 +1571,23 @@ function renderMaterials() {
   list.className = "material-list";
   list.innerHTML = state.materials.map(item => `
     <div class="material-item">
-      <span class="file-icon">${item.type}</span>
+      <span class="file-icon">${escapeHtml(item.type)}</span>
       <div class="file-copy">
         <b title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</b>
-        <small>${item.size} · 待客户排序</small>
+        <small>${escapeHtml(item.size)} · 待客户排序</small>
       </div>
-      <button class="remove-btn" data-remove="${item.id}" aria-label="删除">×</button>
+      <button class="remove-btn" data-remove="${escapeHtml(item.id)}" aria-label="删除">×</button>
     </div>
   `).join("");
 
   $$("[data-remove]").forEach(btn => btn.onclick = () => runAction(async () => {
     const fileId = btn.dataset.remove;
-    if (state.demoMode || !state.projectId) {
-      state.materials = state.materials.filter(item => item.id !== fileId);
-      state.dirty = true;
-    } else {
-      const result = await apiRequest(
-        `/projects/${encodeURIComponent(state.projectId)}/files/${encodeURIComponent(fileId)}`,
-        { method: "DELETE" }
-      );
-      applyProject(result.project);
-    }
+    const result = await apiRequest(
+      `/projects/${encodeURIComponent(state.projectId)}/files/${encodeURIComponent(fileId)}`,
+      { method: "DELETE" }
+    );
+    applyProject(result.project);
+    state.dirty = true;
     renderMaterials();
     saveState();
   }));
@@ -1475,16 +1607,16 @@ function renderOrderedList() {
       <span class="order-index">${String(index + 1).padStart(2, "0")}</span>
       <div class="file-copy">
         <b>${escapeHtml(item.name)}</b>
-        <small>${item.type} · ${item.size}</small>
+        <small>${escapeHtml(item.type)} · ${escapeHtml(item.size)}</small>
       </div>
       <div class="order-controls">
         <div class="move-group">
-          <button class="move-btn" data-move-up="${item.id}" ${index === 0 ? "disabled" : ""} aria-label="上移">↑</button>
-          <button class="move-btn" data-move-down="${item.id}" ${index === state.materials.length - 1 ? "disabled" : ""} aria-label="下移">↓</button>
+          <button class="move-btn" data-move-up="${escapeHtml(item.id)}" ${index === 0 ? "disabled" : ""} aria-label="上移">↑</button>
+          <button class="move-btn" data-move-down="${escapeHtml(item.id)}" ${index === state.materials.length - 1 ? "disabled" : ""} aria-label="下移">↓</button>
         </div>
         <div class="weight-select" aria-label="素材权重">
           ${["核心", "重要", "参考", "忽略"].map(weight => `
-            <button data-weight="${weight}" data-id="${item.id}" class="${item.weight === weight ? "active" : ""}">${weight}</button>
+            <button data-weight="${weight}" data-id="${escapeHtml(item.id)}" class="${item.weight === weight ? "active" : ""}">${weight}</button>
           `).join("")}
         </div>
       </div>
@@ -1512,46 +1644,30 @@ function moveMaterial(id, offset) {
   saveState();
 }
 
-function generateDemoOutline() {
-  const used = state.materials.filter(item => item.weight !== "忽略");
-  const limit = $("#limitInput").value.trim();
-  const instruction = $("#instructionInput").value.trim();
+function resetOutlineView() {
+  $("#pageEstimate").textContent = "—";
+  $("#timeEstimate").textContent = "—";
+  $("#usedEstimate").textContent = "0份";
+  $("#conflictEstimate").textContent = "0项";
+  $("#outline").innerHTML = `<div class="material-list empty"><p>完成前两步后，AI编排结果会显示在这里。</p></div>`;
+  renderOrderSuggestions(null);
+}
 
-  const pageGuess = Math.max(8, Math.min(28, 4 + used.length * 3));
-  $("#pageEstimate").textContent = limit.includes("页") ? limit.split("/")[0].trim() : `${pageGuess}页`;
-  $("#timeEstimate").textContent = limit.includes("分钟") ? (limit.split("/")[1] || limit).trim() : `${Math.round(pageGuess * 1.1)}分钟`;
-  $("#usedEstimate").textContent = `${used.length}份`;
+// 后端返回的是字符串数组，没有素材 ID，无法绑定到具体某一条素材，
+// 所以只在大纲下方整体展示，且不改动客户已确认的顺序。
+function renderOrderSuggestions(result) {
+  const box = $("#suggestionBox");
+  const list = $("#suggestionList");
+  const items = (result?.orderSuggestions || [])
+    .filter(item => typeof item === "string" && item.trim());
 
-  const outline = $("#outline");
-  if (!used.length) {
-    outline.innerHTML = `<div class="material-list empty"><p>没有可采用素材，请返回调整权重。</p></div>`;
+  if (!items.length) {
+    box.hidden = true;
+    list.innerHTML = "";
     return;
   }
-
-  const typeLabel = item => {
-    if (item.type === "VIDEO") return ["视频页", "关键帧"];
-    if (item.type === "IMG") return ["照片组", "成果展示"];
-    if (["XLS", "XLSX", "CSV"].includes(item.type)) return ["数据图表", "数据卡"];
-    if (item.type === "PDF") return ["内容提炼", "结构图"];
-    return ["图文页", "重点摘要"];
-  };
-
-  outline.innerHTML = used.map((item, index) => {
-    const tags = typeLabel(item);
-    return `
-      <div class="outline-item">
-        <span>${String(index + 1).padStart(2, "0")}</span>
-        <div>
-          <b>${escapeHtml(cleanTitle(item.name))}</b>
-          <small>${item.weight}素材 · 按客户指定顺序编排${instruction ? ` · 已读取补充要求` : ""}</small>
-        </div>
-        <div class="outline-tags">
-          ${tags.map(t => `<em>${t}</em>`).join("")}
-          <em>${item.weight}</em>
-        </div>
-      </div>
-    `;
-  }).join("");
+  list.innerHTML = items.map(item => `<li>${escapeHtml(item.trim())}</li>`).join("");
+  box.hidden = false;
 }
 
 function renderAiOutline(result) {
@@ -1560,6 +1676,7 @@ function renderAiOutline(result) {
   $("#timeEstimate").textContent = result?.timeEstimate || "待确认";
   $("#usedEstimate").textContent = `${result?.usedCount ?? state.materials.filter(item => item.weight !== "忽略").length}份`;
   $("#conflictEstimate").textContent = `${(result?.conflicts || []).length}项`;
+  renderOrderSuggestions(result);
 
   const outline = $("#outline");
   if (!sections.length) {
@@ -1591,7 +1708,7 @@ function renderAiOutline(result) {
 
 async function analyzeProject() {
   await saveProject(false);
-  toast("AI正在解析资料并生成编排，请稍候");
+  showBusyNote("AI正在解析资料并生成编排，资料较多时可能需要几分钟，请不要关闭页面…");
   const result = await apiRequest(`/projects/${encodeURIComponent(state.projectId)}/analyze`, {
     method: "POST",
   });
@@ -1600,10 +1717,6 @@ async function analyzeProject() {
   state.dirty = false;
   renderAiOutline(result.result);
   saveState();
-}
-
-function cleanTitle(name) {
-  return name.replace(/\.[^.]+$/, "").replace(/[（(]\d+张[）)]/, "");
 }
 
 function escapeHtml(value = "") {
@@ -1615,11 +1728,13 @@ function escapeHtml(value = "") {
     .replaceAll("'", "&#039;");
 }
 
-function showStep(step) {
+// scroll 默认为 true：只有用户主动切换步骤时才滚动。
+// 首屏初始化必须传 false，否则页面一打开就跳过 hero。
+function showStep(step, { scroll = true } = {}) {
   state.currentStep = step;
   $$(".panel").forEach(panel => panel.classList.toggle("active", Number(panel.dataset.panel) === step));
   $$(".step").forEach(button => button.classList.toggle("active", Number(button.dataset.step) === step));
-  $("#workspace").scrollIntoView({ behavior: "smooth", block: "start" });
+  if (scroll) $("#workspace").scrollIntoView({ behavior: "smooth", block: "start" });
   saveState();
 }
 
@@ -1630,107 +1745,124 @@ async function goStep(step) {
   }
 
   if (step === 3) {
-    if (state.demoMode) {
-      generateDemoOutline();
-    } else if (state.aiResult && !state.dirty) {
+    if (state.aiResult && !state.dirty) {
       renderAiOutline(state.aiResult);
     } else {
       await analyzeProject();
     }
   }
 
-  if (step === 4 && !state.demoMode) {
+  if (step === 4) {
     await saveProject(true);
   }
 
   showStep(step);
 }
 
-async function runAction(action) {
-  if (state.busy) return;
+function showBusyNote(text) {
+  const note = $("#busyNote");
+  note.classList.remove("error");
+  $("#busyNoteText").textContent = text;
+  $("#busyRetryBtn").hidden = true;
+  $("#busyDismissBtn").hidden = true;
+  note.hidden = false;
+}
+
+function showBusyError(text, retry) {
+  const note = $("#busyNote");
+  note.classList.add("error");
+  $("#busyNoteText").textContent = text;
+  $("#busyRetryBtn").hidden = !retry;
+  $("#busyDismissBtn").hidden = false;
+  note.hidden = false;
+  pendingRetry = retry || null;
+}
+
+function hideBusyNote() {
+  $("#busyNote").hidden = true;
+  pendingRetry = null;
+}
+
+let pendingRetry = null;
+
+// 说明：这里刻意不加前端硬超时。analyze 在服务端可能跑几分钟，
+// 前端单方面 abort 只会让用户以为失败，而服务端任务仍在继续。
+// 本轮先保证「看得见在跑」和「失败能重来」，异步任务化另行设计。
+async function runAction(action, options = {}) {
+  const { label = "正在处理…" } = options;
+  if (state.busy) {
+    toast("正在处理上一步操作，请稍候");
+    return;
+  }
+
   state.busy = true;
   document.body.setAttribute("aria-busy", "true");
+  showBusyNote(label);
   try {
     await action();
+    hideBusyNote();
   } catch (error) {
     console.error(error);
-    toast(error?.message || "操作失败，请稍后重试");
+    const message = error?.message || "操作失败，请稍后重试";
+    if (error?.retryable) {
+      showBusyError(message, () => runAction(action, options));
+    } else {
+      hideBusyNote();
+      toast(message);
+    }
   } finally {
     state.busy = false;
     document.body.removeAttribute("aria-busy");
   }
 }
 
-function getPublicShareUrl() {
-  if (PUBLIC_SHARE_URL && /^https?:\/\//i.test(PUBLIC_SHARE_URL)) {
-    return PUBLIC_SHARE_URL;
-  }
-
-  if (/^https?:$/i.test(location.protocol)) {
-    return location.href;
-  }
-
-  return "";
-}
-
 async function sharePage() {
-  const publicUrl = getPublicShareUrl();
-  const title = "PPT资料管家";
-  const intro = "上传全部资料，指定顺序和重点，AI自动编排并生成PPT。";
-  const data = publicUrl
-    ? { title, text: intro, url: publicUrl }
-    : { title, text: intro };
+  const data = {
+    title: "PPT资料管家",
+    text: "上传全部资料，指定顺序和重点，AI自动编排并生成PPT。",
+    url: PUBLIC_SHARE_URL,
+  };
 
   if (navigator.share) {
     try {
       await navigator.share(data);
-      if (!publicUrl) {
-        toast("当前是本地预览，只分享产品介绍；部署后才会带网页链接");
-      }
       return;
-    } catch {}
+    } catch (error) {
+      // 用户主动取消分享面板时不再退回到复制，否则会莫名其妙弹一条"已复制"。
+      if (error?.name === "AbortError") return;
+    }
   }
 
   try {
-    await navigator.clipboard.writeText(publicUrl || intro);
-    toast(publicUrl
-      ? "网页链接已复制，可粘贴到微信"
-      : "产品介绍已复制；本地文件不能生成可访问链接");
+    await navigator.clipboard.writeText(PUBLIC_SHARE_URL);
+    toast("网页链接已复制，可粘贴到微信");
   } catch {
-    toast(publicUrl
-      ? "请复制网页地址后发送到微信"
-      : "当前是本地预览，正式部署后才能分享网页链接");
+    toast("请复制地址栏链接后发送到微信");
   }
 }
 
 function detectWeChat() {
-  const isWeChat = /MicroMessenger/i.test(navigator.userAgent);
-  const hasPublicUrl = Boolean(getPublicShareUrl());
-
-  if (isWeChat) {
-    $(".privacy-note").textContent = hasPublicUrl
-      ? "已适配微信内置浏览器"
-      : "本地预览不能作为微信网页链接传播";
-  }
-
-  if (!hasPublicUrl) {
-    $("#shareBtn").textContent = "分享产品介绍";
-    $("#shareProjectBtn").textContent = "分享产品介绍";
+  if (/MicroMessenger/i.test(navigator.userAgent)) {
+    $(".privacy-note").textContent = "已适配微信内置浏览器";
   }
 }
 
 $("#fileInput").addEventListener("change", event => {
   const input = event.target;
-  runAction(() => addFiles(input.files)).finally(() => { input.value = ""; });
+  const files = [...input.files];
+  input.value = "";
+  runAction(() => addFiles(files), { label: "正在上传素材到云端…" });
 });
 $("#extraMediaInput").addEventListener("change", event => {
   const input = event.target;
+  const files = [...input.files];
+  input.value = "";
   runAction(async () => {
-    await addFiles(input.files);
+    await addFiles(files);
     state.dirty = true;
     await analyzeProject();
     toast("新媒体已加入，AI编排已经更新");
-  }).finally(() => { input.value = ""; });
+  }, { label: "正在上传媒体并重新编排…" });
 });
 
 const dropzone = $("#dropzone");
@@ -1742,9 +1874,13 @@ const dropzone = $("#dropzone");
   event.preventDefault();
   dropzone.classList.remove("dragover");
 }));
-dropzone.addEventListener("drop", event => runAction(() => addFiles(event.dataTransfer.files)));
+// 先取出文件快照：DataTransfer 在事件结束后就不保证可用，重试时也需要这份数据。
+dropzone.addEventListener("drop", event => {
+  const files = [...event.dataTransfer.files];
+  runAction(() => addFiles(files), { label: "正在上传素材到云端…" });
+});
 
-$("#loadDemoBtn").onclick = () => runAction(loadDemo);
+$("#loadDemoBtn").onclick = () => runAction(loadDemo, { label: "正在创建示例项目…" });
 $("#startBtn").onclick = () => {
   if (!state.accessToken && !state.projectId) {
     showAccessGate("请先使用邀请码登录");
@@ -1779,8 +1915,17 @@ $("#logoutBtn").onclick = () => {
   showAccessGate("已退出，请使用邀请码重新登录");
 };
 
+// 只负责把已有的建议展开定位，不发起新的 AI 请求，也不改客户顺序。
 $("#aiSuggestBtn").onclick = () => {
-  toast("AI建议已生成，但不会自动改变客户顺序");
+  const items = (state.aiResult?.orderSuggestions || [])
+    .filter(item => typeof item === "string" && item.trim());
+  if (!items.length) {
+    toast(state.aiResult ? "本次编排没有AI顺序建议" : "请先生成编排预览，再查看AI建议");
+    return;
+  }
+  renderAiOutline(state.aiResult);
+  showStep(3, { scroll: false });
+  $("#suggestionBox").scrollIntoView({ behavior: "smooth", block: "center" });
 };
 
 $("#restartBtn").onclick = () => {
@@ -1788,15 +1933,22 @@ $("#restartBtn").onclick = () => {
   state.projectId = "";
   state.projectToken = "";
   state.aiResult = null;
-  state.demoMode = false;
   state.dirty = false;
-  localStorage.removeItem(LOCAL_STATE_KEY);
+  safeStorageRemove(LOCAL_STATE_KEY);
   ["purposeInput", "audienceInput", "limitInput", "instructionInput"].forEach(id => $("#" + id).value = "");
   renderMaterials();
+  resetOutlineView();
   showStep(1);
   if (!state.accessToken) showAccessGate("新建项目需要邀请码登录");
   toast("已新建空白项目");
 };
+
+$("#busyRetryBtn").onclick = () => {
+  const retry = pendingRetry;
+  hideBusyNote();
+  if (retry) retry();
+};
+$("#busyDismissBtn").onclick = hideBusyNote;
 
 $$("[data-next]").forEach(btn => btn.onclick = () => runAction(() => goStep(Number(btn.dataset.next))));
 $$("[data-prev]").forEach(btn => btn.onclick = () => runAction(() => goStep(Number(btn.dataset.prev))));
@@ -1809,7 +1961,12 @@ $$(".step").forEach(btn => btn.onclick = () => runAction(() => goStep(Number(btn
 });
 
 async function initialize() {
-  restoreLocalState();
+  const clearedLegacyDemo = restoreLocalState();
+
+  // 登录会话必须先恢复：项目虽然靠 X-Project-Token 读取，
+  // 但"新建项目"要 Authorization，退出按钮也要靠 accessUser 才显示。
+  const hasSession = await restoreAccessSession();
+
   if (state.projectId && state.projectToken) {
     hideAccessGate();
     try {
@@ -1822,18 +1979,23 @@ async function initialize() {
       state.projectToken = "";
       state.aiResult = null;
       state.currentStep = 1;
-      localStorage.removeItem(LOCAL_STATE_KEY);
+      saveState();
       toast("项目恢复失败，请重新上传资料");
-      if (!await restoreAccessSession()) showAccessGate();
+      if (!hasSession) showAccessGate();
     }
-  } else if (!await restoreAccessSession()) {
+  } else if (!hasSession) {
     showAccessGate();
   }
 
   renderMaterials();
   if (state.currentStep === 3 && state.aiResult) renderAiOutline(state.aiResult);
-  showStep(Math.max(1, Math.min(4, state.currentStep)));
+  else resetOutlineView();
+  showStep(Math.max(1, Math.min(4, state.currentStep)), { scroll: false });
   detectWeChat();
+
+  if (clearedLegacyDemo) {
+    toast("检测到旧版本地演示数据，项目要求已保留，请重新上传素材");
+  }
 }
 
 initialize().catch(error => {
