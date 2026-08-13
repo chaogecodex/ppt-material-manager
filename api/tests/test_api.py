@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import contextlib
 import hashlib
 import importlib
 import io
@@ -37,10 +38,15 @@ class ApiRegressionTests(unittest.TestCase):
         import main
 
         cls.main = importlib.reload(main)
-        cls.client = TestClient(cls.main.app)
+        # 必须作为上下文管理器进入：否则 TestClient 每个请求起一个临时事件循环，
+        # 请求一返回就拆掉，analyze 起的后台任务会被连带取消，
+        # 异步分析永远等不到 done。生产环境跑在常驻的 uvicorn 循环上，没这个问题。
+        cls._client_ctx = TestClient(cls.main.app)
+        cls.client = cls._client_ctx.__enter__()
 
     @classmethod
     def tearDownClass(cls):
+        cls._client_ctx.__exit__(None, None, None)
         cls.tmp.cleanup()
 
     def test_project_file_and_persistence_flow(self):
@@ -229,6 +235,130 @@ class ApiRegressionTests(unittest.TestCase):
             self.main.ZHIPU_API_KEY = original_key
             self.main.AI_MAX_ATTEMPTS = original_attempts
             self.main.asyncio.sleep = original_sleep
+
+    # ------------------------------------------------------------------
+    # 分析异步化：POST 立即返回 202，结果通过 GET 轮询
+    # ------------------------------------------------------------------
+    def _new_project_with_material(self, title="异步分析测试"):
+        logged_in = self.client.post("/auth/login", json={"code": "ppt-test-code"})
+        self.assertEqual(logged_in.status_code, 200)
+        access_headers = {"Authorization": f"Bearer {logged_in.json()['token']}"}
+        created = self.client.post("/projects", headers=access_headers, json={"title": title})
+        self.assertEqual(created.status_code, 200)
+        project_id = created.json()["project"]["id"]
+        headers = {"X-Project-Token": created.json()["accessToken"]}
+        uploaded = self.client.post(
+            f"/projects/{project_id}/files",
+            headers=headers,
+            files=[("files", ("素材.txt", "测试素材内容。".encode("utf-8"), "text/plain"))],
+        )
+        self.assertEqual(uploaded.status_code, 200)
+        return project_id, headers
+
+    @contextlib.contextmanager
+    def _stubbed_ai(self, *, fail=None, delay=0.0, counter=None):
+        """替换掉真实 AI 调用。run_analysis 通过模块全局引用这两个函数，所以打模块属性即可。"""
+        main = self.main
+        original = (main.ZHIPU_API_KEY, main.analyze_material, main.synthesize_outline)
+        main.ZHIPU_API_KEY = "test-key"
+
+        async def fake_analyze_material(item):
+            if counter is not None:
+                counter.append(item["id"])
+            if delay:
+                await asyncio.sleep(delay)
+            if fail is not None:
+                raise fail
+            return {"id": item["id"], "name": item.get("name", ""), "summary": "测试摘要"}
+
+        async def fake_synthesize_outline(project, analyses):
+            return {
+                "outline": [{"title": "测试章节", "summary": "摘要"}],
+                "pageEstimate": "8页",
+                "orderSuggestions": [],
+            }
+
+        main.analyze_material = fake_analyze_material
+        main.synthesize_outline = fake_synthesize_outline
+        try:
+            yield
+        finally:
+            main.ZHIPU_API_KEY, main.analyze_material, main.synthesize_outline = original
+
+    def _wait_for_status(self, project_id, headers, target, timeout=15.0):
+        deadline = time.time() + timeout
+        payload = None
+        while time.time() < deadline:
+            response = self.client.get(f"/projects/{project_id}/analyze", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            if payload["analysisStatus"] == target:
+                return payload
+            time.sleep(0.05)
+        self.fail(f"等待 analysisStatus={target} 超时，最后一次为 {payload}")
+
+    def test_analyze_returns_immediately_and_finishes_in_background(self):
+        project_id, headers = self._new_project_with_material()
+        with self._stubbed_ai(delay=0.2):
+            started = self.client.post(f"/projects/{project_id}/analyze", headers=headers)
+            # 关键：不等 AI 跑完就返回，否则线上会撞网关超时
+            self.assertEqual(started.status_code, 202)
+            self.assertEqual(started.json()["analysisStatus"], "running")
+            self.assertNotIn("result", started.json())
+
+            done = self._wait_for_status(project_id, headers, "done")
+            self.assertTrue(done["result"]["outline"])
+            self.assertEqual(len(done["materials"]), 1)
+            self.assertTrue(done["completedAt"])
+
+        # 结果同样要落到项目上，刷新页面后才拿得到
+        project = self.client.get(f"/projects/{project_id}", headers=headers).json()["project"]
+        self.assertEqual(project["analysisStatus"], "done")
+        self.assertTrue(project["aiResult"]["outline"])
+
+    def test_analyze_failure_surfaces_through_status_endpoint(self):
+        project_id, headers = self._new_project_with_material("分析失败")
+        with self._stubbed_ai(fail=RuntimeError("AI 服务炸了")):
+            started = self.client.post(f"/projects/{project_id}/analyze", headers=headers)
+            # 失败发生在后台，POST 本身仍然是成功受理
+            self.assertEqual(started.status_code, 202)
+
+            failed = self._wait_for_status(project_id, headers, "failed")
+            self.assertIn("AI 服务炸了", failed["error"])
+            self.assertNotIn("result", failed)
+
+    def test_duplicate_submit_does_not_start_a_second_analysis(self):
+        project_id, headers = self._new_project_with_material("重复提交")
+        calls: list = []
+        with self._stubbed_ai(delay=0.5, counter=calls):
+            first = self.client.post(f"/projects/{project_id}/analyze", headers=headers)
+            second = self.client.post(f"/projects/{project_id}/analyze", headers=headers)
+            self.assertEqual(first.status_code, 202)
+            self.assertEqual(second.status_code, 202)
+            self.assertEqual(second.json()["analysisStatus"], "running")
+
+            self._wait_for_status(project_id, headers, "done")
+            # 连点两次不该把同一批素材打给 AI 两遍
+            self.assertEqual(len(calls), 1)
+
+    def test_interrupted_run_is_reported_as_failed_and_can_restart(self):
+        project_id, headers = self._new_project_with_material("中断恢复")
+
+        # 模拟容器在分析途中重启：状态永久停在 running
+        project = self.main.load_project(project_id)
+        project["analysisStatus"] = "running"
+        project["analysisStartedAt"] = "2020-01-01T00:00:00+00:00"
+        self.main.save_project(project)
+
+        stuck = self.client.get(f"/projects/{project_id}/analyze", headers=headers)
+        self.assertEqual(stuck.json()["analysisStatus"], "failed")
+        self.assertIn("中断", stuck.json()["error"])
+
+        # 而且必须允许重新发起，不能被那个永不结束的状态锁死
+        with self._stubbed_ai():
+            restarted = self.client.post(f"/projects/{project_id}/analyze", headers=headers)
+            self.assertEqual(restarted.status_code, 202)
+            self._wait_for_status(project_id, headers, "done")
 
 
 if __name__ == "__main__":

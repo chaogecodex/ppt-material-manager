@@ -1456,6 +1456,8 @@ async function apiRequest(path, options = {}) {
 function applyProject(project) {
   state.materials = (project.materials || []).map(item => ({ ...item }));
   state.aiResult = project.aiResult || null;
+  // 记下来是为了刷新页面后能判断"分析是不是还在后台跑"，进而接着轮询。
+  state.analysisStatus = project.analysisStatus || "idle";
   const brief = project.brief || {};
   $("#purposeInput").value = brief.purpose || "";
   $("#audienceInput").value = brief.audience || "";
@@ -1710,20 +1712,84 @@ function renderAiOutline(result) {
   }).join("");
 }
 
+// 可被测试改小，避免回归用例为了等轮询而空转。生产环境走默认值。
+const ANALYSIS_POLL_INTERVAL_MS = Number(window.__analysisPollIntervalMs) || 2500;
+// 轮询期间允许连续失败几次。分析可能跑几分钟，中途一次网络抖动
+// 不应该让用户前功尽弃——后端还在跑，重连上就能拿到结果。
+const ANALYSIS_POLL_MAX_CONSECUTIVE_ERRORS = 5;
+
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// 等待后端把分析跑完。
+//
+// 刻意不设前端硬超时：分析真的可能要几分钟，前端单方面放弃只会让用户
+// 以为失败、而任务仍在后台继续。终止条件交给后端——它对中断的分析有
+// 兜底判定，会把卡死的状态判为 failed，这里自然就退出了。
+async function waitForAnalysis() {
+  let consecutiveErrors = 0;
+  let first = true;
+  while (true) {
+    // 第一次先查再等：刷新页面接续时分析可能早就跑完了，
+    // 先睡一轮等于白白多等一个间隔。
+    if (first) first = false;
+    else await delay(ANALYSIS_POLL_INTERVAL_MS);
+    let status;
+    try {
+      status = await apiRequest(`/projects/${encodeURIComponent(state.projectId)}/analyze`);
+      consecutiveErrors = 0;
+    } catch (error) {
+      // 凭证失效或项目没了属于确定性失败，再轮询也没有意义
+      if (error?.status === 401 || error?.status === 403 || error?.status === 404) throw error;
+      consecutiveErrors += 1;
+      if (consecutiveErrors >= ANALYSIS_POLL_MAX_CONSECUTIVE_ERRORS) throw error;
+      continue;
+    }
+    if (status.analysisStatus === "done") return status;
+    if (status.analysisStatus === "failed") {
+      const error = new Error(status.error || "分析失败，请重试");
+      error.retryable = true;
+      throw error;
+    }
+  }
+}
+
+function applyAnalysisResult(payload) {
+  if (payload.project) applyProject(payload.project);
+  state.aiResult = payload.result;
+  state.analysisStatus = "done";
+  state.dirty = false;
+  renderAiOutline(payload.result);
+  saveState();
+}
+
 async function analyzeProject() {
   // 必须放在 saveProject 之前：用户一旦触发重新分析，旧大纲就已经不可信，
   // 无论保存请求成功与否都应先清除。放在之后的话，保存阶段失败会让旧大纲残留。
   resetOutlineView();
   await saveProject(false);
   showBusyNote("AI正在解析资料并生成编排，资料较多时可能需要几分钟，请不要关闭页面…");
-  const result = await apiRequest(`/projects/${encodeURIComponent(state.projectId)}/analyze`, {
+  const started = await apiRequest(`/projects/${encodeURIComponent(state.projectId)}/analyze`, {
     method: "POST",
   });
-  applyProject(result.project);
-  state.aiResult = result.result;
-  state.dirty = false;
-  renderAiOutline(result.result);
-  saveState();
+  // 同时兼容两种后端：旧后端同步返回 result，新后端返回 202 交由轮询。
+  // 有了这个分支，前端可以先于后端发布，中间没有破窗期。
+  applyAnalysisResult(started.result ? started : await waitForAnalysis());
+}
+
+// 刷新页面时分析可能还在后台跑。同步版本里这种情况只能干等到超时，
+// 现在可以直接接上去继续等结果。
+//
+// 走 runAction 是为了复用忙碌锁、提示与失败重试。重试时状态已经不是
+// running 了，所以这里要退回重新发起分析——否则点重试会静默地什么都不做。
+function resumeAnalysisIfRunning() {
+  if (state.analysisStatus !== "running") return;
+  runAction(async () => {
+    if (state.analysisStatus === "running") {
+      applyAnalysisResult(await waitForAnalysis());
+    } else {
+      await analyzeProject();
+    }
+  }, { label: "上次的AI编排仍在后台进行，正在等待结果…" });
 }
 
 function escapeHtml(value = "") {
@@ -2015,6 +2081,9 @@ async function initialize() {
   if (clearedLegacyDemo) {
     toast("检测到旧版本地演示数据，项目要求已保留，请重新上传素材");
   }
+
+  // 刻意不 await：分析可能还要几分钟，不能挡住首屏渲染。
+  resumeAnalysisIfRunning();
 }
 
 initialize().catch(error => {
